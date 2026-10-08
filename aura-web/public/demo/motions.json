@@ -1,0 +1,278 @@
+{
+  "version": "aura-judge-demo-v1",
+  "caveat": "Bundled Text2Motion Aura examples are for interface demonstration only. They are not same-prompt experimental evidence and must not be cited as Aura benchmark results.",
+  "motions": [
+    {
+      "id": "sample_01_single_text_prompt",
+      "name": "01 Single Text Prompt",
+      "prompt": "A person walking forward quickly stumbles but maintains their balance",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 5.0,
+      "preview_file": "/demo/files/sample_01_single_text_prompt.g1.json",
+      "features": [
+        0.1868,
+        0.0,
+        3.7016,
+        3.8036,
+        0.1487,
+        4.967
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.1868,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 3.7016,
+        "root_horizontal_path_m": 3.8036,
+        "root_height_range_m": 0.1487,
+        "duration_s": 4.967
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_02_multi_text_ee_constraint",
+      "name": "02 Multi Text Ee Constraint",
+      "prompt": "A person walks forward while carrying a box \u2192 A person sets a box down onto the ground",
+      "model": "g1",
+      "fps": 56.065574,
+      "duration_s": 4.067,
+      "preview_file": "/demo/files/sample_02_multi_text_ee_constraint.g1.json",
+      "features": [
+        0.3714,
+        0.0,
+        2.1552,
+        2.9721,
+        0.4663,
+        4.049
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.3714,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 2.1552,
+        "root_horizontal_path_m": 2.9721,
+        "root_height_range_m": 0.4663,
+        "duration_s": 4.049
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_03_full_body_keyframes",
+      "name": "03 Full Body Keyframes",
+      "prompt": "A person walking forward picks up something off the ground",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 5.0,
+      "preview_file": "/demo/files/sample_03_full_body_keyframes.g1.json",
+      "features": [
+        0.1247,
+        0.0,
+        3.0032,
+        3.0641,
+        0.209,
+        4.967
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.1247,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 3.0032,
+        "root_horizontal_path_m": 3.0641,
+        "root_height_range_m": 0.209,
+        "duration_s": 4.967
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_04_ee_constraint",
+      "name": "04 Ee Constraint",
+      "prompt": "A person walks diagonally to the left and waves at someone on their right",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 4.967,
+      "preview_file": "/demo/files/sample_04_ee_constraint.g1.json",
+      "features": [
+        0.1338,
+        0.0,
+        4.0427,
+        4.062,
+        0.0555,
+        4.933
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.1338,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 4.0427,
+        "root_horizontal_path_m": 4.062,
+        "root_height_range_m": 0.0555,
+        "duration_s": 4.933
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_05_root_path",
+      "name": "05 Root Path",
+      "prompt": "Initially standing still and calm, the person then starts jogging in a counterclockwise arc.",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 6.033,
+      "preview_file": "/demo/files/sample_05_root_path.g1.json",
+      "features": [
+        0.4398,
+        0.0,
+        3.1445,
+        6.9253,
+        0.0651,
+        6.0
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.4398,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 3.1445,
+        "root_horizontal_path_m": 6.9253,
+        "root_height_range_m": 0.0651,
+        "duration_s": 6.0
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_06_root_waypoints",
+      "name": "06 Root Waypoints",
+      "prompt": "A person is walking while carrying a small object in their left hand",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 8.033,
+      "preview_file": "/demo/files/sample_06_root_waypoints.g1.json",
+      "features": [
+        0.4603,
+        0.0,
+        4.6815,
+        6.8577,
+        0.0385,
+        8.0
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.4603,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 4.6815,
+        "root_horizontal_path_m": 6.8577,
+        "root_height_range_m": 0.0385,
+        "duration_s": 8.0
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_07_text_terrain",
+      "name": "07 Text Terrain",
+      "prompt": "A person begins walking up the stairs",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 3.5,
+      "preview_file": "/demo/files/sample_07_text_terrain.g1.json",
+      "features": [
+        0.0873,
+        0.0524,
+        1.1595,
+        1.1841,
+        1.1659,
+        3.467
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.0873,
+        "estimated_below_floor_fraction": 0.0524,
+        "root_horizontal_displacement_m": 1.1595,
+        "root_horizontal_path_m": 1.1841,
+        "root_height_range_m": 1.1659,
+        "duration_s": 3.467
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    },
+    {
+      "id": "sample_08_text_object",
+      "name": "08 Text Object",
+      "prompt": "A person picks up an object from low on their left side and places it up high",
+      "model": "g1",
+      "fps": 30.0,
+      "duration_s": 5.033,
+      "preview_file": "/demo/files/sample_08_text_object.g1.json",
+      "features": [
+        0.0122,
+        0.0,
+        0.016,
+        0.5039,
+        0.2929,
+        5.0
+      ],
+      "feature_names": [
+        "near_floor_toe_speed_m_s",
+        "estimated_below_floor_fraction",
+        "root_horizontal_displacement_m",
+        "root_horizontal_path_m",
+        "root_height_range_m",
+        "duration_s"
+      ],
+      "screening": {
+        "near_floor_toe_speed_m_s": 0.0122,
+        "estimated_below_floor_fraction": 0.0,
+        "root_horizontal_displacement_m": 0.016,
+        "root_horizontal_path_m": 0.5039,
+        "root_height_range_m": 0.2929,
+        "duration_s": 5.0
+      },
+      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+    }
+  ]
+}
