@@ -1,14 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { AURA_OVERLAY_LAYER, createAuraRenderer, createAuraWorld, prefersReducedMotion } from '../three/auraWorld'
+import { RobotFlare } from '../three/robotFlare'
+import { toonStylize, type ToonStylizeHandle } from '../three/toonStylize'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { createBvhPoseBuffers, loadBVH, sampleBVHWorldPose } from '../bvh'
 import type { BvhMotion, BvhPoseBuffers } from '../bvh'
 import type { MotionQuality, MotionSide } from '../aistReferenceMotions'
 import { STUDY_CLIP_SECONDS } from '../aistReferenceMotions'
+import { FairyRig, ROBOT_MODEL, createFairyMaterial, loadFairyAsset } from '../three/fairyRig'
 
-export type Embodiment = 'g1' | 'xbot'
+/** 'g1' resolves to the Blossom Fairy while ROBOT_MODEL === 'fairy' (see three/fairyRig.ts). */
+export type Embodiment = 'g1' | 'xbot' | 'fairy'
+
+const BODY_LABEL: Record<Embodiment, { short: string; loading: string; chip: string }> = {
+  g1: { short: 'G1', loading: 'Unitree G1 geometry', chip: 'UNITREE G1' },
+  xbot: { short: 'XBot', loading: 'XBot', chip: 'XBOT' },
+  fairy: { short: 'Fairy', loading: 'Blossom Fairy', chip: 'BLOSSOM FAIRY' },
+}
 
 export type ViewPose = {
   azimuth: number
@@ -161,7 +172,6 @@ const qDelta = new THREE.Quaternion()
 const qAdjusted = new THREE.Quaternion()
 const qNudge = new THREE.Quaternion()
 const qFinalWorld = new THREE.Quaternion()
-const qRestAlignment = new THREE.Quaternion()
 const qSwing = new THREE.Quaternion()
 const qHeadStartLocal = new THREE.Quaternion()
 const qHeadCurrentLocal = new THREE.Quaternion()
@@ -173,11 +183,8 @@ const qUpperBodyTargetDeltaLocal = new THREE.Quaternion()
 const qUpperBodyParentStartInv = new THREE.Quaternion()
 const qUpperBodyTargetParentRestInv = new THREE.Quaternion()
 const qUpperBodyDamped = new THREE.Quaternion()
-const sourceRestDirection = new THREE.Vector3()
 const sourceAnimatedDirection = new THREE.Vector3()
-const targetRestDirection = new THREE.Vector3()
 const targetBaselineDirection = new THREE.Vector3()
-const desiredTargetDirection = new THREE.Vector3()
 const qBaselineWorld = new THREE.Quaternion()
 const tempEuler = new THREE.Euler()
 const tempVector = new THREE.Vector3()
@@ -258,17 +265,17 @@ function makeMaterial(name: string, source: THREE.Material | undefined, marbleTe
   const isDarkDetail = /eye|visor|inner|socket|under|rubber/i.test(name)
   const standard = source instanceof THREE.MeshStandardMaterial ? source : undefined
 
-  // Robot Renaissance palette: glazed ivory shell, antique-gold mechanics,
-  // and restrained blackened-metal details. Pale-blue highlights come from the
+  // Monochrome beige palette: cream shell, taupe mechanics and warm
+  // near-black details, all on one hue. Highlights come from the warm
   // studio lighting rather than changing A/B appearance independently.
   const material = new THREE.MeshPhysicalMaterial({
     color: isJoint
-      ? new THREE.Color(0xb78d47)
+      ? new THREE.Color(0x9c8a72)
       : isDarkDetail
-        ? new THREE.Color(0x151515)
+        ? new THREE.Color(0x16120e)
         : isSurface
-          ? new THREE.Color(0xf3eee5)
-          : standard?.color ?? new THREE.Color(0xe9dfcf),
+          ? new THREE.Color(0xf1e8d9)
+          : standard?.color ?? new THREE.Color(0xe6dccb),
     map: isSurface ? marbleTexture ?? standard?.map ?? null : standard?.map ?? null,
     normalMap: standard?.normalMap ?? null,
     roughness: isJoint ? 0.28 : isDarkDetail ? 0.48 : isSurface ? 0.44 : 0.38,
@@ -276,9 +283,9 @@ function makeMaterial(name: string, source: THREE.Material | undefined, marbleTe
     clearcoat: isJoint ? 0.26 : isDarkDetail ? 0.10 : isSurface ? 0.58 : 0.72,
     clearcoatRoughness: isJoint ? 0.24 : isSurface ? 0.46 : 0.34,
     sheen: isSurface ? 0.16 : 0,
-    sheenColor: new THREE.Color(0xb8d5de),
+    sheenColor: new THREE.Color(0xe6d9c4),
     sheenRoughness: 0.72,
-    emissive: isDarkDetail ? new THREE.Color(0x050708) : new THREE.Color(0x000000),
+    emissive: isDarkDetail ? new THREE.Color(0x070605) : new THREE.Color(0x000000),
     emissiveIntensity: isDarkDetail ? 0.08 : 0,
     side: THREE.DoubleSide,
   })
@@ -290,200 +297,6 @@ function makeMaterial(name: string, source: THREE.Material | undefined, marbleTe
   return material
 }
 
-
-/**
- * Build a lightweight Unitree G1 kinematic proxy without redistributing vendor
- * meshes. The semantic bone names intentionally match the existing retargeter,
- * while the proportions, compact torso, joint layout and rigid-link styling are
- * based on the G1 humanoid morphology. It is a visualization / evaluation proxy,
- * not a hardware dynamics model or claim of executable robot control.
- */
-function buildG1Proxy() {
-  const group = new THREE.Group()
-  group.name = 'Unitree-G1-kinematic-proxy'
-
-  const shell = new THREE.MeshPhysicalMaterial({
-    color: 0xe7eef0,
-    roughness: 0.34,
-    metalness: 0.16,
-    clearcoat: 0.52,
-    clearcoatRoughness: 0.28,
-    sheen: 0.18,
-    sheenColor: new THREE.Color(0xb9d9e3),
-    sheenRoughness: 0.65,
-  })
-  const shellBlue = new THREE.MeshPhysicalMaterial({
-    color: 0x9fc7d4,
-    roughness: 0.31,
-    metalness: 0.22,
-    clearcoat: 0.48,
-    clearcoatRoughness: 0.25,
-  })
-  const dark = new THREE.MeshPhysicalMaterial({
-    color: 0x171a1d,
-    roughness: 0.42,
-    metalness: 0.64,
-    clearcoat: 0.16,
-    clearcoatRoughness: 0.42,
-  })
-  const joint = new THREE.MeshPhysicalMaterial({
-    color: 0xb78d47,
-    roughness: 0.27,
-    metalness: 0.86,
-    clearcoat: 0.22,
-    clearcoatRoughness: 0.24,
-  })
-  const visor = new THREE.MeshPhysicalMaterial({
-    color: 0x080b0d,
-    roughness: 0.18,
-    metalness: 0.72,
-    clearcoat: 0.78,
-    clearcoatRoughness: 0.12,
-  })
-
-  const bones = new Map<string, THREE.Bone>()
-  const bone = (name: string, parent: THREE.Object3D, x: number, y: number, z: number) => {
-    const b = new THREE.Bone()
-    b.name = name
-    b.position.set(x, y, z)
-    parent.add(b)
-    bones.set(name, b)
-    return b
-  }
-
-  const addJoint = (b: THREE.Bone, radius = 0.048) => {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 16, 12), joint)
-    mesh.name = `${b.name}_joint`
-    mesh.castShadow = true
-    mesh.receiveShadow = true
-    b.add(mesh)
-    return mesh
-  }
-
-  const addLink = (
-    b: THREE.Bone,
-    childOffset: THREE.Vector3,
-    radius: number,
-    material: THREE.Material = shell,
-    radialSegments = 12,
-  ) => {
-    const length = Math.max(childOffset.length(), 1e-4)
-    const geometry = new THREE.CylinderGeometry(radius * 0.82, radius, length * 0.92, radialSegments, 1, false)
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.name = `${b.name}_surface`
-    mesh.position.copy(childOffset).multiplyScalar(0.46)
-    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), childOffset.clone().normalize())
-    mesh.castShadow = true
-    mesh.receiveShadow = true
-    b.add(mesh)
-    addJoint(b, Math.min(radius * 0.72, 0.055))
-    return mesh
-  }
-
-  const hips = bone('Hips', group, 0, 0.74, 0)
-  const spine = bone('Spine', hips, 0, 0.12, 0)
-  const spine1 = bone('Spine1', spine, 0, 0.12, 0)
-  const spine2 = bone('Spine2', spine1, 0, 0.12, 0)
-  const neck = bone('Neck', spine2, 0, 0.12, 0)
-  const head = bone('Head', neck, 0, 0.095, 0)
-
-  // Pelvis and torso: compact G1-like rigid housings.
-  const pelvisShell = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.18, 0.20), dark)
-  pelvisShell.name = 'pelvis_surface'
-  pelvisShell.position.y = 0.015
-  pelvisShell.castShadow = pelvisShell.receiveShadow = true
-  hips.add(pelvisShell)
-  const pelvisFront = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.105, 0.022), shellBlue)
-  pelvisFront.name = 'pelvis_contour_surface'
-  pelvisFront.position.set(0, 0.022, -0.105)
-  hips.add(pelvisFront)
-
-  const waistHousing = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.19, 16), dark)
-  waistHousing.name = 'waist_joint'
-  waistHousing.position.y = 0.11
-  hips.add(waistHousing)
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.34, 0.21), shell)
-  torso.name = 'torso_surface'
-  torso.position.set(0, 0.12, 0)
-  torso.scale.set(0.94, 1, 0.92)
-  torso.castShadow = torso.receiveShadow = true
-  spine1.add(torso)
-  const chestPanel = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.18, 0.025), shellBlue)
-  chestPanel.name = 'torso_panel_surface'
-  chestPanel.position.set(0, 0.14, -0.117)
-  spine1.add(chestPanel)
-  const chestBand = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.036, 0.228), joint)
-  chestBand.name = 'torso_joint_accent'
-  chestBand.position.set(0, 0.03, 0)
-  spine1.add(chestBand)
-
-  const headShell = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.19, 0.18), shell)
-  headShell.name = 'head_surface'
-  headShell.position.y = 0.045
-  headShell.castShadow = headShell.receiveShadow = true
-  head.add(headShell)
-  const face = new THREE.Mesh(new THREE.BoxGeometry(0.155, 0.074, 0.018), visor)
-  face.name = 'head_visor'
-  face.position.set(0, 0.062, -0.099)
-  head.add(face)
-  const crown = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.022, 0.11), joint)
-  crown.name = 'head_joint_accent'
-  crown.position.set(0, 0.148, 0)
-  head.add(crown)
-
-  const makeArm = (side: 'Left' | 'Right', sign: number) => {
-    const shoulder = bone(`${side}Shoulder`, spine2, sign * 0.205, 0.055, 0)
-    const upper = bone(`${side}Arm`, shoulder, sign * 0.115, -0.025, 0)
-    const fore = bone(`${side}ForeArm`, upper, sign * 0.225, -0.025, 0)
-    const hand = bone(`${side}Hand`, fore, sign * 0.205, -0.015, 0)
-    const finger = bone(`${side}HandMiddle4`, hand, sign * 0.105, -0.006, -0.005)
-    addLink(shoulder, upper.position.clone(), 0.075, shellBlue)
-    addLink(upper, fore.position.clone(), 0.064, shell)
-    addLink(fore, hand.position.clone(), 0.055, dark)
-    addLink(hand, finger.position.clone(), 0.045, shell)
-    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.075, 0.055), shell)
-    palm.name = `${side.toLowerCase()}_hand_surface`
-    palm.position.copy(finger.position).multiplyScalar(0.44)
-    palm.castShadow = true
-    hand.add(palm)
-  }
-
-  const makeLeg = (side: 'Left' | 'Right', sign: number) => {
-    const thigh = bone(`${side}UpLeg`, hips, sign * 0.105, -0.095, 0)
-    const shin = bone(`${side}Leg`, thigh, 0, -0.355, 0.005)
-    const foot = bone(`${side}Foot`, shin, 0, -0.355, 0.012)
-    const toe = bone(`${side}ToeBase`, foot, 0, -0.045, -0.13)
-    bone(`${side}Toe_End`, toe, 0, 0, -0.09)
-    addLink(thigh, shin.position.clone(), 0.078, shell)
-    addLink(shin, foot.position.clone(), 0.069, dark)
-    addLink(foot, toe.position.clone(), 0.054, shellBlue)
-    const footShell = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.075, 0.245), shell)
-    footShell.name = `${side.toLowerCase()}_foot_surface`
-    footShell.position.set(0, -0.035, -0.095)
-    footShell.castShadow = footShell.receiveShadow = true
-    foot.add(footShell)
-  }
-
-  makeArm('Left', 1)
-  makeArm('Right', -1)
-  makeLeg('Left', 1)
-  makeLeg('Right', -1)
-
-  // Small neck actuator stack.
-  addLink(spine2, neck.position.clone(), 0.075, dark)
-  addLink(neck, head.position.clone(), 0.052, joint)
-  addJoint(hips, 0.07)
-
-  group.traverse((object) => {
-    if ((object as THREE.Mesh).isMesh) {
-      const mesh = object as THREE.Mesh
-      mesh.frustumCulled = false
-    }
-  })
-
-  return group
-}
 
 const G1_LINK_TARGET: Record<string, TargetBoneName> = {
   pelvis: 'Hips',
@@ -556,29 +369,12 @@ function makeG1OfficialMaterial(name: string, marbleTexture?: THREE.Texture) {
     marbleTexture.rotation = -0.08
   }
   return new THREE.MeshToonMaterial({
-    color: new THREE.Color(isGold ? 0xc49a43 : 0xf4eee4),
+    color: new THREE.Color(isGold ? 0xa8957a : 0xf2e9da),
     map: !isGold ? marbleTexture ?? null : null,
-    emissive: new THREE.Color(isGold ? 0x2a1708 : 0x16090b),
+    emissive: new THREE.Color(isGold ? 0x1f1912 : 0x14100c),
     emissiveIntensity: isGold ? 0.06 : 0.025,
     side: THREE.DoubleSide,
   })
-}
-
-function stripProxyGeometry(group: THREE.Group) {
-  const meshes: THREE.Mesh[] = []
-  group.traverse((object) => {
-    if ((object as THREE.Mesh).isMesh) meshes.push(object as THREE.Mesh)
-  })
-  const geometries = new Set<THREE.BufferGeometry>()
-  const materials = new Set<THREE.Material>()
-  for (const mesh of meshes) {
-    geometries.add(mesh.geometry)
-    const meshMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-    meshMaterials.forEach((material) => materials.add(material))
-    mesh.parent?.remove(mesh)
-  }
-  geometries.forEach((geometry) => geometry.dispose())
-  materials.forEach((material) => material.dispose())
 }
 
 
@@ -762,7 +558,7 @@ async function buildG1OfficialModel(assetBase: string, marbleTexture?: THREE.Tex
 
       const mesh = new THREE.Mesh(geometry, /dark/i.test(materialName) ? darkMaterial : whiteMaterial)
       mesh.name = `g1_${linkName}_surface`
-      const outline = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x251014, side: THREE.BackSide, transparent: true, opacity: 0.70 }))
+      const outline = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x17130e, side: THREE.BackSide, transparent: true, opacity: 0.70 }))
       outline.name = `${mesh.name}_comic_outline`
       outline.scale.setScalar(1.012)
       outline.renderOrder = -1
@@ -1006,11 +802,6 @@ function makeAnatomicalBasis(
   return new THREE.Quaternion().setFromRotationMatrix(matrix).normalize()
 }
 
-function signedAngleAroundAxis(a: THREE.Vector3, b: THREE.Vector3, axis: THREE.Vector3) {
-  const cross = a.clone().cross(b)
-  return Math.atan2(axis.dot(cross), THREE.MathUtils.clamp(a.dot(b), -1, 1))
-}
-
 function buildLegCalibration(
   side: LegSide,
   motion: BvhMotion,
@@ -1162,112 +953,6 @@ function aimBoneAlongWorldDirection(
   bone.quaternion.copy(qParentInv).multiply(outWorld).normalize()
 }
 
-// The Mixamo XBot in this project faces local -Z, and AIST++ leg joint frames
-// use the same anatomical forward convention. Constraining both the child axis
-// and this forward axis removes the otherwise free roll around the long bone.
-const LEG_LOCAL_FORWARD = new THREE.Vector3(0, 0, -1)
-const frameLocalX = new THREE.Vector3()
-const frameLocalY = new THREE.Vector3()
-const frameLocalZ = new THREE.Vector3()
-const frameWorldX = new THREE.Vector3()
-const frameWorldY = new THREE.Vector3()
-const frameWorldZ = new THREE.Vector3()
-const frameLocalMatrix = new THREE.Matrix4()
-const frameLocalInverse = new THREE.Matrix4()
-const frameWorldMatrix = new THREE.Matrix4()
-const frameRotationMatrix = new THREE.Matrix4()
-const mappedLegForward = new THREE.Vector3()
-const mappedShinForward = new THREE.Vector3()
-
-function makeDirectionFrontFrame(
-  direction: THREE.Vector3,
-  front: THREE.Vector3,
-  x: THREE.Vector3,
-  y: THREE.Vector3,
-  z: THREE.Vector3,
-  out: THREE.Matrix4,
-) {
-  y.copy(direction).normalize()
-  z.copy(front).addScaledVector(y, -front.dot(y))
-  if (z.lengthSq() < 1e-8) {
-    z.set(0, 0, -1).addScaledVector(y, y.z)
-    if (z.lengthSq() < 1e-8) z.set(1, 0, 0).addScaledVector(y, -y.x)
-  }
-  z.normalize()
-  x.copy(y).cross(z).normalize()
-  z.copy(x).cross(y).normalize()
-  out.makeBasis(x, y, z)
-  return out
-}
-
-function orientLegBoneWithForward(
-  bone: THREE.Bone,
-  parentWorld: THREE.Quaternion,
-  localChildDirection: THREE.Vector3,
-  desiredWorldDirection: THREE.Vector3,
-  desiredWorldForward: THREE.Vector3,
-  outWorld: THREE.Quaternion,
-) {
-  makeDirectionFrontFrame(
-    localChildDirection, LEG_LOCAL_FORWARD,
-    frameLocalX, frameLocalY, frameLocalZ, frameLocalMatrix,
-  )
-  makeDirectionFrontFrame(
-    desiredWorldDirection, desiredWorldForward,
-    frameWorldX, frameWorldY, frameWorldZ, frameWorldMatrix,
-  )
-  frameLocalInverse.copy(frameLocalMatrix).invert()
-  frameRotationMatrix.copy(frameWorldMatrix).multiply(frameLocalInverse)
-  outWorld.setFromRotationMatrix(frameRotationMatrix).normalize()
-  qParentInv.copy(parentWorld).invert()
-  bone.quaternion.copy(qParentInv).multiply(outWorld).normalize()
-}
-
-/**
- * Build an anatomical frame for a leg segment. The segment direction controls
- * where the bone points, while the leg-plane normal controls axial roll.
- */
-function makeLegFrameQuaternion(direction: THREE.Vector3, planeNormal: THREE.Vector3) {
-  const y = direction.clone().normalize()
-  const z = planeNormal.clone().addScaledVector(y, -planeNormal.dot(y))
-  if (z.lengthSq() < 1e-8) {
-    z.set(0, 0, 1).addScaledVector(y, -y.z)
-    if (z.lengthSq() < 1e-8) z.set(1, 0, 0).addScaledVector(y, -y.x)
-  }
-  z.normalize()
-  const x = y.clone().cross(z).normalize()
-  z.copy(x).cross(y).normalize()
-  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z)).normalize()
-}
-
-/**
- * Solve a leg segment from a full anatomical frame instead of treating its
- * roll as an extra twist around the aimed bone. The frame is defined by:
- *   Y = hip→knee (or knee→ankle) segment direction
- *   Z = normal of the hip-knee-ankle plane
- * This preserves XBot's bind-pose skin orientation while mapping the source
- * knee plane directly, which avoids the persistent inward-facing kneecaps from
- * the older "pole as up-axis" approach.
- */
-function orientLegBoneFromPlane(
-  bone: THREE.Bone,
-  base: RestPose,
-  parentWorld: THREE.Quaternion,
-  restWorldDirection: THREE.Vector3,
-  restWorldPlaneNormal: THREE.Vector3,
-  desiredWorldDirection: THREE.Vector3,
-  desiredWorldPlaneNormal: THREE.Vector3,
-  outWorld: THREE.Quaternion,
-) {
-  const restFrame = makeLegFrameQuaternion(restWorldDirection, restWorldPlaneNormal)
-  const desiredFrame = makeLegFrameQuaternion(desiredWorldDirection, desiredWorldPlaneNormal)
-  const frameDelta = desiredFrame.multiply(restFrame.invert()).normalize()
-
-  outWorld.copy(frameDelta).multiply(base.worldQuaternion).normalize()
-  qParentInv.copy(parentWorld).invert()
-  bone.quaternion.copy(qParentInv).multiply(outWorld).normalize()
-}
-
 const sourcePelvisLeftAxis = new THREE.Vector3()
 const sourcePelvisCenter = new THREE.Vector3()
 const targetPelvisLeftAxis = new THREE.Vector3()
@@ -1338,7 +1023,6 @@ function solveLegIK(
   motion: BvhMotion,
   sourcePose: BvhPoseBuffers,
   calibration: RetargetCalibration,
-  _targetSegmentRestDirections: Map<TargetBoneName, THREE.Vector3>,
   targetSegmentLocalDirections: Map<TargetBoneName, THREE.Vector3>,
   quality: MotionQuality,
   localSeconds: number,
@@ -1519,7 +1203,6 @@ function applyRetargetedPose(
   seed: number,
   rootScale: number,
   calibration: RetargetCalibration,
-  targetSegmentRestDirections: Map<TargetBoneName, THREE.Vector3>,
   targetSegmentLocalDirections: Map<TargetBoneName, THREE.Vector3>,
 ) {
   resetRig(rig, targetRest)
@@ -1714,8 +1397,8 @@ function applyRetargetedPose(
   // Lower body maps the live AIST++ thigh/shin segment directions directly and
   // preserves each knee/ankle lateral coordinate relative to the pelvis. This
   // avoids the fixed rest-pose correction that was pushing both knees inward.
-  solveLegIK('Left', rig, targetRest, targetAnimatedWorld, motion, sourcePose, calibration, targetSegmentRestDirections, targetSegmentLocalDirections, quality, localSeconds, seed)
-  solveLegIK('Right', rig, targetRest, targetAnimatedWorld, motion, sourcePose, calibration, targetSegmentRestDirections, targetSegmentLocalDirections, quality, localSeconds, seed)
+  solveLegIK('Left', rig, targetRest, targetAnimatedWorld, motion, sourcePose, calibration, targetSegmentLocalDirections, quality, localSeconds, seed)
+  solveLegIK('Right', rig, targetRest, targetAnimatedWorld, motion, sourcePose, calibration, targetSegmentLocalDirections, quality, localSeconds, seed)
 }
 
 function applyViewPose(camera: THREE.PerspectiveCamera, controls: OrbitControls, pose: ViewPose) {
@@ -1730,7 +1413,7 @@ function applyViewPose(camera: THREE.PerspectiveCamera, controls: OrbitControls,
 }
 
 export function XBotScene({
-  embodiment = 'g1',
+  embodiment: requestedEmbodiment = 'g1',
   side,
   quality,
   motionFile,
@@ -1746,6 +1429,7 @@ export function XBotScene({
   viewPose,
   onViewPoseChange,
 }: Props) {
+  const embodiment: Embodiment = requestedEmbodiment === 'g1' && ROBOT_MODEL === 'fairy' ? 'fairy' : requestedEmbodiment
   const mountRef = useRef<HTMLDivElement | null>(null)
   const pausedRef = useRef(paused)
   const playheadRef = useRef(playhead)
@@ -1796,13 +1480,11 @@ export function XBotScene({
     let userControlling = false
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x741c26)
-    scene.fog = new THREE.FogExp2(0x741c26, 0.026)
 
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 100)
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.05, 220) // far covers the Aura world's distant mesas
     camera.position.set(0, 1.4, 5.35)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
+    const renderer = createAuraRenderer({ alpha: false, powerPreference: 'high-performance' }) // canvas MSAA only without the world composite
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -1810,17 +1492,30 @@ export function XBotScene({
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.02
 
-    const marbleTexture = new THREE.TextureLoader().load('/textures/marble-gold.png')
-    marbleTexture.colorSpace = THREE.SRGBColorSpace
-    marbleTexture.wrapS = THREE.RepeatWrapping
-    marbleTexture.wrapT = THREE.RepeatWrapping
-    marbleTexture.repeat.set(0.55, 0.55)
-    // Larger-scale veining: repeat below 1 enlarges the marble pattern across the shell.
-    marbleTexture.center.set(0.5, 0.5)
-    marbleTexture.rotation = -0.08
-    marbleTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    // Marble skin of the XBot and G1 bodies; the fairy keeps her own textures, so it is not loaded for her.
+    let marbleTexture: THREE.Texture | undefined
+    if (embodiment !== 'fairy') {
+      marbleTexture = new THREE.TextureLoader().load('/textures/marble-gold.png')
+      marbleTexture.colorSpace = THREE.SRGBColorSpace
+      marbleTexture.wrapS = THREE.RepeatWrapping
+      marbleTexture.wrapT = THREE.RepeatWrapping
+      marbleTexture.repeat.set(0.55, 0.55)
+      // Larger-scale veining: repeat below 1 enlarges the marble pattern across the shell.
+      marbleTexture.center.set(0.5, 0.5)
+      marbleTexture.rotation = -0.08
+      marbleTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy())
+    }
 
     mount.appendChild(renderer.domElement)
+
+    // Stylised Aura world (sky, ground, mesas, ink pass). The stage robot is
+    // ~2.7 units tall, so the world is scaled ~2x relative to a real G1.
+    const world = createAuraWorld(scene, renderer, { scale: 2.1, ring: false, props: { density: 0.8, keepOut: 3.3 } })
+    world.observe(mount)
+    const worldClock = new THREE.Clock()
+    let robotFlare: RobotFlare | null = null
+    let stylized: ToonStylizeHandle | null = null
+    let fairyRig: FairyRig | null = null
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
@@ -1843,11 +1538,11 @@ export function XBotScene({
       })
     })
 
-    const hemi = new THREE.HemisphereLight(0xfff0dc, 0x3d1016, 1.72)
+    const hemi = new THREE.HemisphereLight(0xfff4e4, 0x2a231c, 1.72)
     scene.add(hemi)
 
     // Warm gallery key: reads as antique gilt on metallic joints.
-    const key = new THREE.DirectionalLight(0xffe4b7, 4.2)
+    const key = new THREE.DirectionalLight(0xfff0dc, 4.2)
     key.position.set(-4.2, 6.6, 4.4)
     key.castShadow = true
     key.shadow.mapSize.set(1024, 1024)
@@ -1856,19 +1551,19 @@ export function XBotScene({
     scene.add(key)
 
     // Cool powder-blue fill keeps the ivory shell aligned with the website palette.
-    const fill = new THREE.DirectionalLight(0x82c8e8, 2.10)
+    const fill = new THREE.DirectionalLight(0xd8c7ad, 2.10)
     fill.position.set(4.8, 3.1, 4.2)
     scene.add(fill)
 
-    const rim = new THREE.DirectionalLight(0x63b6da, 3.25)
+    const rim = new THREE.DirectionalLight(0xe6d6bd, 3.25)
     rim.position.set(3.8, 5.8, -4.8)
     scene.add(rim)
 
-    const goldRim = new THREE.DirectionalLight(0xe7bd72, 1.65)
+    const goldRim = new THREE.DirectionalLight(0xcdb898, 1.65)
     goldRim.position.set(-4.2, 3.8, -3.6)
     scene.add(goldRim)
 
-    const top = new THREE.PointLight(0xfff3db, 9.5, 8, 2)
+    const top = new THREE.PointLight(0xfff4e4, 9.5, 8, 2)
     top.position.set(0, 4.8, 0.8)
     scene.add(top)
 
@@ -1877,44 +1572,16 @@ export function XBotScene({
     // the presentation feels like a museum pedestal instead of a generic demo.
     const stageTopY = 0.665
 
-    const ground = new THREE.Mesh(
-      new THREE.CircleGeometry(5.6, 96),
-      new THREE.MeshPhysicalMaterial({
-        color: 0xf1e7d7,
-        roughness: 0.84,
-        metalness: 0.01,
-        clearcoat: 0.08,
-        clearcoatRoughness: 0.82,
-      }),
-    )
-    ground.rotation.x = -Math.PI / 2
-    ground.receiveShadow = true
-    scene.add(ground)
-
-    const floorHalo = new THREE.Mesh(
-      new THREE.RingGeometry(2.55, 3.55, 96),
-      new THREE.MeshBasicMaterial({ color: 0xb82734, transparent: true, opacity: 0.24, side: THREE.DoubleSide }),
-    )
-    floorHalo.rotation.x = -Math.PI / 2
-    floorHalo.position.y = 0.006
-    scene.add(floorHalo)
-
-    const floorGold = new THREE.Mesh(
-      new THREE.RingGeometry(1.92, 1.98, 96),
-      new THREE.MeshBasicMaterial({ color: 0xcaa867, transparent: true, opacity: 0.22, side: THREE.DoubleSide }),
-    )
-    floorGold.rotation.x = -Math.PI / 2
-    floorGold.position.y = 0.008
-    scene.add(floorGold)
+    // The world ground (createAuraWorld) replaces the old dark floor disc and halos.
 
     turntable = new THREE.Group()
-    turntable.name = `${embodiment === 'g1' ? 'G1' : 'XBot'}-${side}-turntable`
+    turntable.name = `${BODY_LABEL[embodiment].short}-${side}-turntable`
     scene.add(turntable)
 
     const stageBase = new THREE.Mesh(
       new THREE.CylinderGeometry(2.1, 2.24, 0.34, 96, 1),
       new THREE.MeshPhysicalMaterial({
-        color: 0xe8dac0,
+        color: 0x3d405b, // navy
         roughness: 0.58,
         metalness: 0.03,
         clearcoat: 0.24,
@@ -1929,7 +1596,7 @@ export function XBotScene({
     const stageMid = new THREE.Mesh(
       new THREE.CylinderGeometry(1.76, 1.9, 0.15, 96, 1),
       new THREE.MeshPhysicalMaterial({
-        color: 0xeadfcf,
+        color: 0x4f5268,
         roughness: 0.46,
         metalness: 0.02,
         clearcoat: 0.30,
@@ -1944,7 +1611,7 @@ export function XBotScene({
     const stageTop = new THREE.Mesh(
       new THREE.CylinderGeometry(1.38, 1.46, 0.17, 96, 1),
       new THREE.MeshPhysicalMaterial({
-        color: 0xf3ece1,
+        color: 0x81b29a, // sage
         roughness: 0.34,
         metalness: 0.01,
         clearcoat: 0.42,
@@ -1959,7 +1626,7 @@ export function XBotScene({
     const topInlay = new THREE.Mesh(
       new THREE.CircleGeometry(1.26, 96),
       new THREE.MeshPhysicalMaterial({
-        color: 0xd7e7ee,
+        color: 0x6f9a8a,
         roughness: 0.44,
         metalness: 0.05,
         clearcoat: 0.52,
@@ -1973,7 +1640,7 @@ export function XBotScene({
 
     const topGoldRing = new THREE.Mesh(
       new THREE.RingGeometry(1.08, 1.18, 96),
-      new THREE.MeshBasicMaterial({ color: 0xc29a57, transparent: true, opacity: 0.58, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: 0xf2cc8f, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
     )
     topGoldRing.rotation.x = -Math.PI / 2
     topGoldRing.position.y = stageTopY + 0.004
@@ -1981,21 +1648,21 @@ export function XBotScene({
 
     const topBlueRing = new THREE.Mesh(
       new THREE.RingGeometry(0.54, 0.72, 96),
-      new THREE.MeshBasicMaterial({ color: 0x95bccd, transparent: true, opacity: 0.34, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: 0xe07a5f, transparent: true, opacity: 0.6, side: THREE.DoubleSide }),
     )
     topBlueRing.rotation.x = -Math.PI / 2
     topBlueRing.position.y = stageTopY + 0.005
     turntable.add(topBlueRing)
 
     const gildedTrimMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xc39a56,
+      color: 0xe2c089,
       roughness: 0.26,
       metalness: 0.88,
       clearcoat: 0.22,
       clearcoatRoughness: 0.28,
     })
     const enamelTrimMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0x97c0cf,
+      color: 0x5e6073,
       roughness: 0.34,
       metalness: 0.24,
       clearcoat: 0.34,
@@ -2062,7 +1729,7 @@ export function XBotScene({
       if (disposed) return
       model = obj
       presentation = new THREE.Group()
-      presentation.name = `${embodiment === 'g1' ? 'G1' : 'XBot'}-${side}-presentation`
+      presentation.name = `${BODY_LABEL[embodiment].short}-${side}-presentation`
       presentation.position.y = stageTopY
       presentation.add(obj)
       ;(turntable ?? scene).add(presentation)
@@ -2082,6 +1749,10 @@ export function XBotScene({
         }
       })
 
+      // Paint the body (G1 or XBot) into the world's palette language (toonStylize.ts);
+      // the fairy already gets it in createFairyMaterial (fairyRig.ts).
+      stylized?.dispose()
+      stylized = embodiment === 'fairy' ? null : toonStylize(obj)
       obj.updateMatrixWorld(true)
       const rawBox = new THREE.Box3().setFromObject(obj)
       rawModelHeight = Math.max(rawBox.max.y - rawBox.min.y, 0.0001)
@@ -2107,7 +1778,7 @@ export function XBotScene({
         const discovered = listRigBoneNames(obj)
         const preview = discovered.slice(0, 24).join(', ')
         setLoadError(
-          `${embodiment === 'g1' ? 'G1' : 'XBot'} rig mapping failed for: ${missingTargetBones.join(', ')}. ` +
+          `${BODY_LABEL[embodiment].short} rig mapping failed for: ${missingTargetBones.join(', ')}. ` +
           `Runtime bones (${discovered.length}): ${preview}${discovered.length > 24 ? ', …' : ''}`,
         )
         setLoadState('error')
@@ -2133,10 +1804,10 @@ export function XBotScene({
       }
 
       const trailDefinitions: Array<[THREE.Object3D | undefined, number]> = [
-        [findBone(obj, 'LeftHandMiddle4') ?? rig.LeftHand, 0x82c8e8],
-        [findBone(obj, 'RightHandMiddle4') ?? rig.RightHand, 0xb9e6f6],
-        [findBone(obj, 'LeftToe_End') ?? findBone(obj, 'LeftToeBase') ?? rig.LeftFoot, 0x4ea6ca],
-        [findBone(obj, 'RightToe_End') ?? findBone(obj, 'RightToeBase') ?? rig.RightFoot, 0x9ddcf1],
+        [findBone(obj, 'LeftHandMiddle4') ?? rig.LeftHand, 0xe6d6bd],
+        [findBone(obj, 'RightHandMiddle4') ?? rig.RightHand, 0xf4ecdf],
+        [findBone(obj, 'LeftToe_End') ?? findBone(obj, 'LeftToeBase') ?? rig.LeftFoot, 0xbfae94],
+        [findBone(obj, 'RightToe_End') ?? findBone(obj, 'RightToeBase') ?? rig.RightFoot, 0xd8c7ad],
       ]
       trails = trailDefinitions
         .filter((entry): entry is [THREE.Object3D, number] => Boolean(entry[0]))
@@ -2146,13 +1817,38 @@ export function XBotScene({
         presentation.add(trail.segments)
         presentation.add(trail.marker)
       }
+      // Fairy flare riding the fastest of hands, feet and head (none under reduced motion).
+      if (!prefersReducedMotion()) {
+        const limbs = [...trails.map((trail) => trail.endEffector), rig.Head].filter((o): o is THREE.Object3D => Boolean(o))
+        robotFlare?.dispose()
+        robotFlare = new RobotFlare(limbs.map((object) => ({ object })), { scale: 2.1, strength: 0.65, layer: AURA_OVERLAY_LAYER })
+        scene.add(robotFlare.points)
+      }
 
       modelLoaded = true
       if (motion) rootScale = rawModelHeight / motion.sourceHeight
       maybeReady()
     }
 
-    if (embodiment === 'g1') {
+    if (embodiment === 'fairy') {
+      // Shared cached GLB; this viewer gets its own skinned clone and toon material over her baked textures.
+      loadFairyAsset()
+        .then((asset) => {
+          if (disposed) return
+          fairyRig = new FairyRig(asset)
+          const body = createFairyMaterial(asset) // one material for every fairy mesh of this viewer
+          for (const mesh of fairyRig.meshes) mesh.material = body
+          const holder = new THREE.Group()
+          holder.add(fairyRig.root)
+          finishModel(holder)
+        })
+        .catch((error: unknown) => {
+          if (disposed) return
+          const message = error instanceof Error ? error.message : String(error)
+          setLoadError(`Blossom Fairy: ${message || 'Could not load the GLB.'}`)
+          setLoadState('error')
+        })
+    } else if (embodiment === 'g1') {
       buildG1OfficialModel(`${normalizedBase}models/g1/`, marbleTexture)
         .then((obj) => finishModel(obj))
         .catch((error: unknown) => {
@@ -2226,6 +1922,11 @@ export function XBotScene({
     }
 
     const tick = () => {
+      const worldDt = worldClock.getDelta()
+      if (!world.visible) {
+        raf = requestAnimationFrame(tick)
+        return
+      }
       const normalized = THREE.MathUtils.clamp(playheadRef.current / 100, 0, 1)
       const seconds = normalized * STUDY_CLIP_SECONDS
 
@@ -2243,7 +1944,6 @@ export function XBotScene({
           degradationSeed,
           rootScale,
           retargetCalibration,
-          targetSegmentRestDirections,
           targetSegmentLocalDirections,
         )
         model.updateMatrixWorld(true)
@@ -2299,7 +1999,12 @@ export function XBotScene({
       }
 
       controls.update()
-      renderer.render(scene, camera)
+      if (robotFlare) {
+        camera.updateMatrixWorld()
+        // the turntable / presentation updateMatrixWorld above already refreshed the posed body
+        robotFlare.update(worldDt, renderer.getPixelRatio(), camera, Math.max(mount.clientHeight, 1), 1, true)
+      }
+      world.render(camera, worldDt)
       raf = requestAnimationFrame(tick)
     }
     tick()
@@ -2309,16 +2014,20 @@ export function XBotScene({
       cancelAnimationFrame(raf)
       observer.disconnect()
       controls.dispose()
+      robotFlare?.dispose()
+      stylized?.dispose()
+      world.dispose()
 
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh
-        mesh.geometry?.dispose?.()
+        if (!mesh.userData?.sharedGeometry) mesh.geometry?.dispose?.() // the fairy's geometry belongs to the cached GLB
         if (!mesh.material) return
         const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
         materials.forEach((material) => material?.dispose?.())
       })
+      fairyRig?.dispose() // after the traverse, so its per-viewer materials were disposed above
 
-      marbleTexture.dispose()
+      marbleTexture?.dispose()
       renderer.dispose()
       renderer.domElement.remove()
     }
@@ -2326,10 +2035,10 @@ export function XBotScene({
 
   return (
     <div className="xbot-scene" ref={mountRef}>
-      {loadState === 'loading' && <div className="xbot-status">Loading {embodiment === 'g1' ? 'Unitree G1 geometry' : 'XBot'} + bundled AIST++ BVH…</div>}
+      {loadState === 'loading' && <div className="xbot-status">Loading {BODY_LABEL[embodiment].loading} + bundled AIST++ BVH…</div>}
       {loadState === 'ready' && (
         <div className="motion-source-chip" title={motionFile}>
-          AIST++ → {embodiment === 'g1' ? 'UNITREE G1' : 'XBOT'} · morphology retarget · {motionMeta}
+          AIST++ → {BODY_LABEL[embodiment].chip} · morphology retarget · {motionMeta}
         </div>
       )}
       {loadState === 'error' && (

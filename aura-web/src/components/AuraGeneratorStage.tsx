@@ -309,7 +309,7 @@ export function AuraGeneratorStage() {
         <div className={`aura-engine-status ${status?.cuda_available ? 'ready' : ''}`}>
           <span />
           <strong>{generating ? 'AURA GENERATING' : status?.cuda_available ? 'G1 ENGINE READY' : 'ENGINE OFFLINE'}</strong>
-          <small>{status?.cuda_name || 'Waiting for local CUDA generator'}</small>
+          <small>{status?.cuda_name || 'Waiting for local generator (CUDA or MPS)'}</small>
         </div>
       </div>
 

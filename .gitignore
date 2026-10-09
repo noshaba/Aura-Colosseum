@@ -8,3 +8,8 @@ __pycache__/
 aura-web/node_modules/
 aura-web/dist/
 .env
+
+# Editor / OS / build caches
+.DS_Store
+.vscode/
+*.tsbuildinfo

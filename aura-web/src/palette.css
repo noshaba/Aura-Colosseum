@@ -1,0 +1,76 @@
+/* ==========================================================================
+   Brand palette layer (loaded last). Re-points the design-tokens.css scale at
+   the five-colour palette instead of the single beige hue:
+
+     eggshell  #f4f1de  canvas
+     navy      #3d405b  ink: all text, primary buttons, dark blocks (8.9:1 on canvas)
+     sunset    #f2cc8f  light fill; accent text on navy (6.6:1)
+     sage      #81b29a  fill; "ready" status
+     terra     #e07a5f  highlight: link underline, selection, illustration accents
+
+   Terra, sage and sunset are all under 3:1 on the canvas, so they are only ever
+   fills and decoration, never text on light backgrounds. Text tiers are a
+   navy-to-eggshell ramp so they keep AA contrast on canvas and surface.
+   ========================================================================== */
+:root {
+  --fx-eggshell: #f4f1de;
+  --fx-navy: #3d405b;
+  --fx-sunset: #f2cc8f;
+  --fx-sage: #81b29a;
+  --fx-terra: #e07a5f;
+
+  /* the tone scale keeps its roles: light surfaces, palette fills, then text */
+  --fx-tone-50: var(--fx-eggshell);
+  --fx-tone-100: #ebe8d7;          /* surface: cards, pills */
+  --fx-tone-150: #e2dfd1;
+  --fx-tone-200: var(--fx-sunset); /* light fill; accent text on navy */
+  --fx-tone-300: var(--fx-sage);
+  --fx-tone-400: var(--fx-terra);
+  --fx-tone-500: #5e6073;          /* [5.4:1] */
+  --fx-tone-600: #4f5268;          /* [6.8:1] secondary text, nav hover */
+  --fx-tone-700: #45485f;          /* primary hover */
+  --fx-tone-800: #34374e;
+  --fx-tone-900: var(--fx-navy);   /* ink */
+
+  --fx-ink-5: rgba(61, 64, 91, .05);
+  --fx-ink-10: rgba(61, 64, 91, .1);
+  --fx-ink-20: rgba(61, 64, 91, .2);
+  --fx-ink-40: #5e6073;            /* muted text: 5.4:1 canvas, 4.6:1 surface */
+  --fx-cream-10: rgba(244, 241, 222, .1);
+  --fx-cream-20: rgba(244, 241, 222, .2);
+  --fx-cream-70: rgba(244, 241, 222, .7);
+
+  /* legacy brand names now land on real palette colours */
+  --fx-blue: var(--fx-navy);
+  --fx-brown: var(--fx-tone-700);
+
+  /* imagery: drop the beige duotone, keep a slight soften so photos sit in the palette */
+  --fx-img-filter: saturate(.85) contrast(1.04);
+  --fx-vignette: radial-gradient(120% 90% at 50% 45%, rgba(61, 64, 91, 0) 55%, rgba(61, 64, 91, .55) 100%);
+}
+
+/* Highlights in terra (decorative only, never body text on canvas) */
+.fx-app ::selection { background: var(--fx-terra); color: var(--fx-navy); }
+.fx-link::after { background: var(--fx-terra); }
+.fx-nav__link.is-current { text-decoration-color: var(--fx-terra); }
+
+/* "Ready" reads as go: sage dot with a soft sage halo */
+.aura-engine-status.ready > span { background: var(--fx-sage) !important; box-shadow: 0 0 0 4px rgba(129, 178, 154, .25) !important; }
+
+/* Footer sits on navy: sage and terra fail AA for small text there, so use eggshell tiers */
+.fx-footer__muted, .fx-footer__label { color: var(--fx-cream-70); }
+.fx-footer__legal { color: rgba(244, 241, 222, .6); }
+
+/* Frosted nav pill re-tinted to the new surface */
+.fx-nav__pill:not(.fx-nav__cta) { background: rgba(235, 232, 215, .66); }
+.fx-nav.is-scrolled .fx-nav__pill:not(.fx-nav__cta) { background: rgba(235, 232, 215, .86); }
+
+/* Use-case shapes carry the palette: terra, sunset, sage, navy (left to right).
+   Navy text on terra (3.4:1) and sage (4.2:1) only passes as large text, so
+   those descriptions are sized up below. */
+.fx-case--1 .fx-case__shape { background: var(--fx-terra); }
+.fx-case--3 .fx-case__shape { background: var(--fx-sage); }
+.fx-case--1, .fx-case--3 { color: var(--fx-navy); }
+.fx-case--3 .fx-case__accent { background: var(--fx-terra); }
+/* Descriptions on terra/sage qualify as WCAG "large text" (>= 18.66px bold, 3:1 minimum) */
+.fx-case--1 p, .fx-case--3 p { font-size: 19px; font-weight: 700; line-height: 1.4; }
