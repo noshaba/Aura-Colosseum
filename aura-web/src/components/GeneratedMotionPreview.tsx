@@ -3,11 +3,13 @@ import * as THREE from 'three'
 import { BVHLoader } from 'three/examples/jsm/loaders/BVHLoader.js'
 import { AURA_OVERLAY_LAYER, createAuraWorld } from '../three/auraWorld'
 import { createStrokedSegments, type StrokedSegments } from '../three/thickLines'
-import { FairyRig, ROBOT_MODEL, createPoseSample, dressFairy, loadFairyAsset, sampleFromPositions } from '../three/fairyRig'
+import { FairyRig, createPoseSample, dressFairy, loadMixamoAsset, sampleFromPositions, type MixamoAsset } from '../three/fairyRig'
+import { useCharacter } from '../hooks/useCharacter'
 
 /** Robot-native skeletal inspection for saved generated motion. */
 export function GeneratedMotionPreview({ file }: { file: string }) {
   const mount = useRef<HTMLDivElement>(null)
+  const { character } = useCharacter()
   useEffect(() => {
     const el = mount.current
     if (!el) return
@@ -48,9 +50,10 @@ export function GeneratedMotionPreview({ file }: { file: string }) {
     let g1Data: {positions: number[][][]; fps: number; parents: number[]} | null = null
     let bvhHelper: THREE.SkeletonHelper | null = null
     let g1Elapsed = 0
-    // ROBOT_MODEL === 'fairy': the Blossom Fairy performs the G1 joints (positions-only data,
-    // rotations estimated in fairyRig) instead of the stroked skeleton.
-    const useFairy = ROBOT_MODEL === 'fairy' && file.endsWith('.g1.json')
+    // A mixamo-retarget character (three/characters.ts) performs the G1 joints (positions-only
+    // data, rotations estimated in fairyRig) instead of the stroked skeleton; the G1 body keeps it.
+    const mixamo = character.kind === 'mixamo-retarget' ? character : null
+    const useFairy = !!mixamo && file.endsWith('.g1.json')
     let fairy: FairyRig | null = null
     const fairyMats: THREE.Material[] = []
     const fairySample = createPoseSample()
@@ -63,13 +66,13 @@ export function GeneratedMotionPreview({ file }: { file: string }) {
     if (file.endsWith('.g1.json')) {
       Promise.all([
         fetch(file).then(r => { if (!r.ok) throw new Error(`Preview HTTP ${r.status}`); return r.json() }),
-        useFairy ? loadFairyAsset() : Promise.resolve(null),
-      ]).then(([data, asset]: [{format: string; positions: number[][][]; parents: number[]; fps: number}, Awaited<ReturnType<typeof loadFairyAsset>> | null]) => {
+        useFairy && mixamo ? loadMixamoAsset(mixamo) : Promise.resolve(null),
+      ]).then(([data, asset]: [{format: string; positions: number[][][]; parents: number[]; fps: number}, MixamoAsset | null]) => {
           if (disposed) return
           if (data.format !== 'g1-joints-v1' || !data.positions?.length || data.parents?.length !== 34) throw new Error('Invalid G1 preview data')
           g1Data = data
-          if (asset) {
-            fairy = new FairyRig(asset)
+          if (asset && mixamo) {
+            fairy = new FairyRig(asset, mixamo)
             fairy.root.scale.setScalar(1 / fairy.scale) // fairy legs = G1 legs: follows the G1 trajectory exactly
             const { body, ink } = dressFairy(fairy, asset)
             fairyMats.push(body, ink)
@@ -168,12 +171,14 @@ export function GeneratedMotionPreview({ file }: { file: string }) {
       resize.disconnect()
       mixerHolder.mixer?.stopAllAction()
       strokes?.dispose()
-      fairy?.dispose(); fairyMats.forEach(m => m.dispose()) // geometry is shared (cached GLB)
+      fairy?.dispose(); fairyMats.forEach(m => m.dispose()) // body + ink from dressFairy; geometry is shared (cached GLB)
       if (bvhHelper) { bvhHelper.geometry.dispose(); (bvhHelper.material as THREE.Material).dispose() }
       world.dispose()
       renderer.dispose()
+      renderer.forceContextLoss() // a character switch rebuilds the viewer: free the context now, not at GC
       renderer.domElement.remove()
     }
-  }, [file])
+    // character (not just its id) is read inside: the registry entry is stable per id.
+  }, [file, character.id])
   return <div className="generated-preview" ref={mount} aria-label="Animated generated motion skeletal preview" />
 }

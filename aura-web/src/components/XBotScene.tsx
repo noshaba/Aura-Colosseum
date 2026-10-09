@@ -10,9 +10,13 @@ import { createBvhPoseBuffers, loadBVH, sampleBVHWorldPose } from '../bvh'
 import type { BvhMotion, BvhPoseBuffers } from '../bvh'
 import type { MotionQuality, MotionSide } from '../aistReferenceMotions'
 import { STUDY_CLIP_SECONDS } from '../aistReferenceMotions'
-import { FairyRig, ROBOT_MODEL, createFairyMaterial, loadFairyAsset } from '../three/fairyRig'
+import { FairyRig, createFairyMaterial, loadMixamoAsset } from '../three/fairyRig'
+import { useCharacter } from '../hooks/useCharacter'
 
-/** 'g1' resolves to the Blossom Fairy while ROBOT_MODEL === 'fairy' (see three/fairyRig.ts). */
+/**
+ * 'g1' is "the selected Aura character": it resolves to 'fairy' (the mixamo-retarget path,
+ * whichever Mixamo model is selected in three/characters.ts) unless the G1 itself is selected.
+ */
 export type Embodiment = 'g1' | 'xbot' | 'fairy'
 
 const BODY_LABEL: Record<Embodiment, { short: string; loading: string; chip: string }> = {
@@ -1429,7 +1433,10 @@ export function XBotScene({
   viewPose,
   onViewPoseChange,
 }: Props) {
-  const embodiment: Embodiment = requestedEmbodiment === 'g1' && ROBOT_MODEL === 'fairy' ? 'fairy' : requestedEmbodiment
+  const { character } = useCharacter()
+  const embodiment: Embodiment = requestedEmbodiment === 'g1' && character.kind === 'mixamo-retarget' ? 'fairy' : requestedEmbodiment
+  const mixamo = embodiment === 'fairy' && character.kind === 'mixamo-retarget' ? character : null
+  const bodyLabel = mixamo ? { short: mixamo.tag, loading: mixamo.label, chip: mixamo.label.toUpperCase() } : BODY_LABEL[embodiment]
   const mountRef = useRef<HTMLDivElement | null>(null)
   const pausedRef = useRef(paused)
   const playheadRef = useRef(playhead)
@@ -1575,7 +1582,7 @@ export function XBotScene({
     // The world ground (createAuraWorld) replaces the old dark floor disc and halos.
 
     turntable = new THREE.Group()
-    turntable.name = `${BODY_LABEL[embodiment].short}-${side}-turntable`
+    turntable.name = `${bodyLabel.short}-${side}-turntable`
     scene.add(turntable)
 
     const stageBase = new THREE.Mesh(
@@ -1726,10 +1733,19 @@ export function XBotScene({
     }
 
     const finishModel = (obj: THREE.Group) => {
-      if (disposed) return
+      if (disposed) {
+        // Switched (character, clip) while the body was loading: the cleanup already ran, so free it here.
+        obj.traverse((child) => {
+          const mesh = child as THREE.Mesh
+          if (!mesh.userData?.sharedGeometry) mesh.geometry?.dispose?.()
+          const materials = mesh.material ? (Array.isArray(mesh.material) ? mesh.material : [mesh.material]) : []
+          materials.forEach((material) => material?.dispose?.())
+        })
+        return
+      }
       model = obj
       presentation = new THREE.Group()
-      presentation.name = `${BODY_LABEL[embodiment].short}-${side}-presentation`
+      presentation.name = `${bodyLabel.short}-${side}-presentation`
       presentation.position.y = stageTopY
       presentation.add(obj)
       ;(turntable ?? scene).add(presentation)
@@ -1778,7 +1794,7 @@ export function XBotScene({
         const discovered = listRigBoneNames(obj)
         const preview = discovered.slice(0, 24).join(', ')
         setLoadError(
-          `${BODY_LABEL[embodiment].short} rig mapping failed for: ${missingTargetBones.join(', ')}. ` +
+          `${bodyLabel.short} rig mapping failed for: ${missingTargetBones.join(', ')}. ` +
           `Runtime bones (${discovered.length}): ${preview}${discovered.length > 24 ? ', …' : ''}`,
         )
         setLoadState('error')
@@ -1831,12 +1847,14 @@ export function XBotScene({
     }
 
     if (embodiment === 'fairy') {
-      // Shared cached GLB; this viewer gets its own skinned clone and toon material over her baked textures.
-      loadFairyAsset()
+      // Shared cached GLB; this viewer gets its own skinned clone and toon material over its baked textures.
+      const def = mixamo
+      const load = def ? loadMixamoAsset(def) : Promise.reject(new Error('No mixamo-retarget character selected.'))
+      load
         .then((asset) => {
-          if (disposed) return
-          fairyRig = new FairyRig(asset)
-          const body = createFairyMaterial(asset) // one material for every fairy mesh of this viewer
+          if (disposed || !def) return
+          fairyRig = new FairyRig(asset, def)
+          const body = createFairyMaterial(asset, def) // one material for every mesh of this viewer
           for (const mesh of fairyRig.meshes) mesh.material = body
           const holder = new THREE.Group()
           holder.add(fairyRig.root)
@@ -1845,7 +1863,7 @@ export function XBotScene({
         .catch((error: unknown) => {
           if (disposed) return
           const message = error instanceof Error ? error.message : String(error)
-          setLoadError(`Blossom Fairy: ${message || 'Could not load the GLB.'}`)
+          setLoadError(`${def?.label ?? 'Character'}: ${message || 'Could not load the GLB.'}`)
           setLoadState('error')
         })
     } else if (embodiment === 'g1') {
@@ -2029,16 +2047,18 @@ export function XBotScene({
 
       marbleTexture?.dispose()
       renderer.dispose()
+      renderer.forceContextLoss() // a character switch rebuilds the viewer: free the context now, not at GC
       renderer.domElement.remove()
     }
-  }, [embodiment, side, quality, motionFile, motionUrl, degradationSeed, startOffsetSeconds])
+    // character.id: switching between two Mixamo models keeps embodiment 'fairy' but still rebuilds.
+  }, [embodiment, character.id, side, quality, motionFile, motionUrl, degradationSeed, startOffsetSeconds])
 
   return (
     <div className="xbot-scene" ref={mountRef}>
-      {loadState === 'loading' && <div className="xbot-status">Loading {BODY_LABEL[embodiment].loading} + bundled AIST++ BVH…</div>}
+      {loadState === 'loading' && <div className="xbot-status">Loading {bodyLabel.loading} + bundled AIST++ BVH…</div>}
       {loadState === 'ready' && (
         <div className="motion-source-chip" title={motionFile}>
-          AIST++ → {BODY_LABEL[embodiment].chip} · morphology retarget · {motionMeta}
+          AIST++ → {bodyLabel.chip} · morphology retarget · {motionMeta}
         </div>
       )}
       {loadState === 'error' && (

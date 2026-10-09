@@ -15,8 +15,38 @@ Drop your own robot model here. Files in this folder are served by Vite at
 > (`EXT_texture_webp`). Regenerate it from the source after editing the model. It is a Mixamo rig (`mixamorig:*` bones, not the G1 skeleton below),
 > so it is retargeted from the G1 joints at runtime; its `Running` clip is not
 > used. See
-> `src/three/fairyRig.ts` (`ROBOT_MODEL = 'g1'` there brings the Unitree G1 STL
-> robot back).
+> `src/three/fairyRig.ts`. To see the Unitree G1 STL robot (or any other model),
+> use the character switch in the nav: it swaps the body live in every viewer.
+
+## Adding a new model
+
+Users pick the character with the switch in the nav (always visible; it cycles
+through the roster) or the "Character" control in the nav menu. The roster lives in
+`src/three/characters.ts`; adding a model is one entry there:
+
+1. Drop the `.glb` in this folder (e.g. `my-robot.web.glb`), within the size
+   budget above. Optional: a square ~64 px thumbnail next to it.
+2. Add an entry to `CHARACTERS` in `src/three/characters.ts`: a new stable `id`,
+   `label`, short `tag`, `kind`, `url: 'models/custom/my-robot.web.glb'`,
+   `effectors` (bone/mesh names of hands, feet and head for the flare/trails),
+   optional `thumbnail` and `credit`. Ids are persisted in users' browsers, so never
+   rename a shipped one.
+
+Requirements per `kind`:
+
+- `mixamo-retarget`: one skinned mesh on a Mixamo skeleton (`mixamorig:*` bone
+  names): Hips, Spine, Spine1, Spine2, Neck, Head and, per side, UpLeg, Leg, Foot,
+  ToeBase, Shoulder, Arm, ForeArm, Hand. Any bind pose works (T, A or a running
+  lean): the retarget derives a neutral pose from it. Set `features.fingers` if
+  the 15 `Hand{Thumb,Index,Middle,Ring,Pinky}{1,2,3}` bones per hand exist, and
+  `features.wings` to a regex of wing bones if it has any (`null` otherwise).
+  Mixamo's auto-rigger produces this naming out of the box.
+- `g1-rigid`: rigid parts per G1 joint, layout A below (today only the bundled
+  Unitree G1 uses it).
+- Any other rig (custom bone names, a different hierarchy): it needs a bone
+  mapping onto the G1 joints, i.e. a new `kind` plus a retarget in
+  `src/three/` before it can be listed. Rename the bones to the Mixamo scheme
+  instead when you can; that is the cheap path.
 
 ## Format: glTF binary (`.glb`)
 

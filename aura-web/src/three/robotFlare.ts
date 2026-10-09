@@ -118,7 +118,7 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
   gl_PointSize = msize * dpr;
 }`,
-      fragmentShader: flarePointFrag(0.9),
+      fragmentShader: flarePointFrag(0.8), // a little more additive than the sweep so it glows on the figure
       ...GLOW_BLEND,
     })
     this.points = new THREE.Points(this.geo, this.mat)
@@ -201,7 +201,7 @@ void main() {
     if (this.head.distanceTo(this.pos[this.active]) > 1.5 * S) this.head.copy(this.pos[this.active])
 
     // Intensity from the followed limb's speed: fast attack, slower release.
-    const target = THREE.MathUtils.smoothstep(this.speed[this.active], 0.3, 1.7) * gain
+    const target = THREE.MathUtils.smoothstep(this.speed[this.active], 0.2, 1.3) * gain
     const k = target > this.intensity ? 1 - Math.exp(-dt / 0.08) : 1 - Math.exp(-dt / 0.45)
     this.intensity += (target - this.intensity) * k
     const I = this.intensity
@@ -213,8 +213,8 @@ void main() {
     this.trailCount = Math.min(TRAIL_SAMPLES, this.trailCount + 1)
 
     // Emit sparkles from the head, carried a little by the limb's motion.
-    this.glintAcc += dt * 30 * I * I
-    this.dustAcc += dt * 90 * I
+    this.glintAcc += dt * 42 * I * I
+    this.dustAcc += dt * 110 * I
     for (; this.glintAcc >= 1; this.glintAcc--) this.spawn(1)
     for (; this.dustAcc >= 1; this.dustAcc--) this.spawn(0)
 
@@ -246,8 +246,8 @@ void main() {
           if (q <= 0) break
           this.c.copy(this.a).lerp(this.b, f)
           pos.setXYZ(m, this.c.x, this.c.y, this.c.z)
-          size.setX(m, (2.5 + 9 * q) * (0.55 + 0.45 * I))
-          alpha.setX(m, q * q * I * 0.75)
+          size.setX(m, (3.5 + 11 * q) * (0.6 + 0.4 * I))
+          alpha.setX(m, Math.min(1, q * q * I * 1.05))
           kind.setX(m, FLARE_KIND.trail)
           col.setXYZ(m, 1, 1, 1)
           m++
@@ -259,8 +259,8 @@ void main() {
     // Head.
     if (I > 0.01) {
       pos.setXYZ(m, this.head.x, this.head.y, this.head.z)
-      size.setX(m, (12 + 18 * I) * (1 + 0.06 * Math.sin(this.time * 11)))
-      alpha.setX(m, I * 0.9)
+      size.setX(m, (16 + 24 * I) * (1 + 0.06 * Math.sin(this.time * 11)))
+      alpha.setX(m, Math.min(1, I * 1.1))
       kind.setX(m, FLARE_KIND.head)
       col.setXYZ(m, 1, 1, 1)
       m++
@@ -280,7 +280,7 @@ void main() {
       const glint = this.skind[i] === 1
       pos.setXYZ(m, this.sx[o], this.sx[o + 1], this.sx[o + 2])
       size.setX(m, glint ? this.ssize[i] * (0.55 + 0.45 * env) * (0.8 + 0.2 * tw) : this.ssize[i])
-      alpha.setX(m, glint ? env * (0.3 + 0.7 * tw) : env * (0.75 + 0.25 * tw))
+      alpha.setX(m, glint ? env * (0.45 + 0.55 * tw) : env * (0.85 + 0.15 * tw))
       kind.setX(m, this.skind[i])
       const cc = FLARE_COLORS[this.scol[i]]
       col.setXYZ(m, cc.r, cc.g, cc.b)

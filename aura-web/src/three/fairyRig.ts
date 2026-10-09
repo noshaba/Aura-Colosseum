@@ -45,12 +45,19 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { prefersReducedMotion } from './auraWorld'
 import { markWingWeights, toonStylizeMaterial } from './toonStylize'
+import { CHARACTERS, getCurrentCharacter, type MixamoCharacter } from './characters'
 
-/** Which body draws every Aura motion. Flip to 'g1' to bring back the Unitree G1 STL robot everywhere. */
-export const ROBOT_MODEL: 'fairy' | 'g1' = 'fairy'
-const FAIRY_URL = 'models/custom/blossom-fairy.rigged.web.glb'
-/** Flare / trail effectors on the fairy (bone names; GLTFLoader turns `mixamorig:Head` into `mixamorigHead`). */
-export const FAIRY_EFFECTORS = /^(mixamorig)?(LeftHand|RightHand|LeftToeBase|RightToeBase|Head)$/
+/**
+ * The Mixamo character used when a caller passes none: the selected one if it is a
+ * Mixamo body, else the first Mixamo entry of the registry.
+ */
+function fallbackMixamo(): MixamoCharacter {
+  const cur = getCurrentCharacter()
+  if (cur.kind === 'mixamo-retarget') return cur
+  const first = CHARACTERS.find((c): c is MixamoCharacter => c.kind === 'mixamo-retarget')
+  if (!first) throw new Error('characters.ts lists no mixamo-retarget character')
+  return first
+}
 
 /** Bone name without the Mixamo prefix, in whatever form the loader left it (`mixamorig:Hips`, `mixamorigHips`, `mixamorig_Hips`). */
 const canonicalBone = (name: string) => name.replace(/^mixamorig[:_]?/i, '')
@@ -224,15 +231,19 @@ function frameQuat(dir: THREE.Vector3, lateral: THREE.Vector3, out: THREE.Quater
 }
 
 
+/** A parsed Mixamo-rigged GLB, shared by every viewer (they clone it with `new FairyRig(asset, def)`). */
 export type FairyAsset = { scene: THREE.Group; height: number; baseMaterial: THREE.MeshStandardMaterial | null }
+export type MixamoAsset = FairyAsset
 
-let assetPromise: Promise<FairyAsset> | null = null
+/** Resolved URL -> one download/parse, kept for the session (entries are dropped on failure so a retry refetches). */
+const assetCache = new Map<string, Promise<MixamoAsset>>()
 
-/** One cached download/parse of the fairy GLB; viewers clone it with `new FairyRig(asset)`. */
-export function loadFairyAsset(base = import.meta.env.BASE_URL || '/') {
-  if (assetPromise) return assetPromise
-  const url = `${base.endsWith('/') ? base : `${base}/`}${FAIRY_URL}`
-  assetPromise = new GLTFLoader().loadAsync(url).then(gltf => {
+/** One cached download/parse of a mixamo-retarget character's GLB (`def.url`, relative to `base`). */
+export function loadMixamoAsset(def: MixamoCharacter, base = import.meta.env.BASE_URL || '/'): Promise<MixamoAsset> {
+  const url = `${base.endsWith('/') ? base : `${base}/`}${def.url}`
+  const cached = assetCache.get(url)
+  if (cached) return cached
+  const promise = new GLTFLoader().loadAsync(url).then(gltf => {
     const scene = gltf.scene
     scene.updateMatrixWorld(true)
     let height = 1.64
@@ -248,8 +259,9 @@ export function loadFairyAsset(base = import.meta.env.BASE_URL || '/') {
     })
     return { scene, height, baseMaterial }
   })
-  assetPromise.catch(() => { assetPromise = null })
-  return assetPromise
+  assetCache.set(url, promise)
+  promise.catch(() => { if (assetCache.get(url) === promise) assetCache.delete(url) })
+  return promise
 }
 
 /**
@@ -258,7 +270,7 @@ export function loadFairyAsset(base = import.meta.env.BASE_URL || '/') {
  * The textures belong to the cached asset; dispose only the material.
  * Wings and fingers are skeletal now, so the material carries no shader patch.
  */
-export function createFairyMaterial(asset: FairyAsset) {
+export function createFairyMaterial(asset: FairyAsset, def: MixamoCharacter = fallbackMixamo()) {
   const material = new THREE.MeshToonMaterial({
     color: 0xffffff,
     map: asset.baseMaterial?.map ?? null, // her normal map is not used: the painted pass drops normal maps
@@ -271,7 +283,8 @@ export function createFairyMaterial(asset: FairyAsset) {
   // from the wing bones' skin weights, and the composite's character tag. Chains onBeforeCompile /
   // customProgramCacheKey.
   let wings = false
-  asset.scene.traverse(o => { const sm = o as THREE.SkinnedMesh; if (sm.isSkinnedMesh) wings = markWingWeights(sm) || wings })
+  const wingRe = def.features.wings
+  if (wingRe) asset.scene.traverse(o => { const sm = o as THREE.SkinnedMesh; if (sm.isSkinnedMesh) wings = markWingWeights(sm, wingRe) || wings })
   toonStylizeMaterial(material, { wings, keepBake: true })
   return material
 }
@@ -282,7 +295,7 @@ export function createFairyMaterial(asset: FairyAsset) {
  * disposes (geometry and textures belong to the cached asset).
  */
 export function dressFairy(rig: FairyRig, asset: FairyAsset, opts: { ink?: THREE.ColorRepresentation; receiveShadow?: boolean } = {}) {
-  const body = createFairyMaterial(asset)
+  const body = createFairyMaterial(asset, rig.def)
   const ink = new THREE.MeshBasicMaterial({ color: opts.ink ?? 0x2a2c40, transparent: true, opacity: 0.72 })
   for (const mesh of rig.meshes) {
     mesh.material = body
@@ -327,6 +340,8 @@ export class FairyRig {
   /** Fairy leg length / G1 leg length. */
   readonly scale: number
   readonly height: number
+  /** The registry entry this instance was built for (features switch fingers / wings on). */
+  readonly def: MixamoCharacter
   private order: THREE.Bone[] = []
   private world = new Map<THREE.Object3D, THREE.Quaternion>()
   private driven = new Map<THREE.Bone, DrivenLimb>()
@@ -351,9 +366,10 @@ export class FairyRig {
   private vb = new THREE.Vector3()
   private vc = new THREE.Vector3()
 
-  constructor(asset: FairyAsset) {
+  constructor(asset: FairyAsset, def: MixamoCharacter = fallbackMixamo()) {
+    this.def = def
     this.root = cloneSkinned(asset.scene)
-    this.root.name = 'BlossomFairy'
+    this.root.name = def.label.replace(/\W+/g, '') || def.id
     this.height = asset.height
     this.root.position.set(0, 0, 0); this.root.quaternion.identity(); this.root.scale.setScalar(1)
     this.root.updateMatrixWorld(true)
@@ -440,8 +456,8 @@ export class FairyRig {
     this.hipsNeutral = upright(this.hips)
     this.hipsParentInv.copy(this.hips.parent!.matrixWorld).invert()
 
-    // Hands: finger bones (absent in an older GLB: the hand then stays a single bone).
-    for (const [side, pre, hand, shoulder] of [['L', 'Left', 24, 18], ['R', 'Right', 32, 26]] as const) {
+    // Hands: finger bones (def.features.fingers; without them the hand stays a single bone).
+    if (def.features.fingers) for (const [side, pre, hand, shoulder] of [['L', 'Left', 24, 18], ['R', 'Right', 32, 26]] as const) {
       const fingers: Finger[] = []
       FINGERS.forEach((f, fi) => {
         for (let s = 0; s < 3; s++) {
@@ -455,11 +471,13 @@ export class FairyRig {
     }
     this.poseFingers() // relaxed hands even in viewers that never call applyPose
 
-    // Wings: root + tip bones under Spine2, flapping about the root's local Y (the hinge along the back).
-    for (const side of ['L', 'R'] as const) {
-      const root = this.bones.get(`wing_${side}`)
-      if (!root) continue
-      const tip = this.bones.get(`wing_${side}_tip`) ?? null
+    // Wings (def.features.wings): root bones matching the pattern, each with an optional `<root>_tip`
+    // child, flapping about the root's local Y (the hinge along the back). Side from the name (L / Left).
+    const wingRe = def.features.wings
+    if (wingRe) for (const [name, root] of this.bones) {
+      if (!wingRe.test(name) || /_tip$/i.test(name)) continue
+      const side: 'L' | 'R' = /(^|[^a-z])(l|left)([^a-z]|$)|left/i.test(name) ? 'L' : 'R'
+      const tip = this.bones.get(`${name}_tip`) ?? null
       // Which way round sweeps the tip backward (-Z in rig space)? Test a small turn on the outward vector.
       const qw = restQ.get(root)!
       const out = new THREE.Vector3(side === 'L' ? 1 : -1, 0, 0)
@@ -603,9 +621,12 @@ export class FairyRig {
     }
   }
 
-  /** Per-instance resources only: geometry and textures are shared through the cached asset. */
+  /** Per-instance resources only (skeleton bone textures); geometry and textures are shared through the cached asset. */
   dispose() {
-    for (const mesh of this.meshes) mesh.onBeforeRender = () => {}
+    // The skeletons are per clone (SkeletonUtils.clone): free their bone textures (the ink outlines share them).
+    const skeletons = new Set<THREE.Skeleton>()
+    for (const mesh of this.meshes) { mesh.onBeforeRender = () => {}; skeletons.add(mesh.skeleton) }
+    skeletons.forEach(sk => sk.dispose())
     this.root.removeFromParent()
   }
 }

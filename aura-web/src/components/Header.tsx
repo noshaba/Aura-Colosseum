@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { shortAddress } from '../solana'
 import { useSmartNav } from '../hooks/useSmartNav'
+import { CharacterPicker } from './CharacterPicker'
+import { CharacterSwitch } from './CharacterSwitch'
 import type { Page } from '../types'
 
 type Props = {
@@ -45,6 +47,8 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
           {/* Light copy, shown only over the dark half of the home hero (hero-arena.css). */}
           <img className="fx-nav__logo-alt" src={`${base}brand/aura-logo-horizontal.png`} alt="" aria-hidden="true" />
         </button>
+        {/* Always visible; cycles the character (the dropdown picker below shares the store). */}
+        <CharacterSwitch />
         <div className="fx-nav__side" ref={menu}>
           <button className="fx-nav__burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="fx-nav-panel" onClick={() => setOpen(v => !v)}>
             <span className="fx-nav__burger-line is-top" />
@@ -57,6 +61,7 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
                 {item.label}
               </button>
             ))}
+            <CharacterPicker className="fx-nav__pill" tabbable={open} />
             <button tabIndex={open ? 0 : -1} className={walletAddress ? 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta is-connected' : 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta'} onClick={() => { setOpen(false); onWallet() }}>
               <img className="fx-nav__cta-mark" src={`${base}brand/aura-mark.png`} alt="" aria-hidden="true" />
               <span>{walletLabel}</span>

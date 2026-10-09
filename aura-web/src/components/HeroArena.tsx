@@ -3,6 +3,7 @@ import type { G1Preview } from '../three/g1Rig'
 import { prepareClip, type PreparedClip } from '../three/g1Actor'
 import { HeroArenaScene, type Choice, type Side, type SideTones } from '../three/heroArenaScene'
 import { prefersReducedMotion } from '../motionPrefs'
+import { useCharacter } from '../hooks/useCharacter'
 import './hero-arena.css'
 
 /*
@@ -89,6 +90,11 @@ export function HeroArena() {
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<HeroArenaScene | null>(null)
   const [reduced] = useState(prefersReducedMotion)
+  // Selected body (nav switch / picker). Read through a ref at mount so the scene is never
+  // rebuilt for it; the effect below swaps the robots live instead.
+  const { character } = useCharacter()
+  const characterRef = useRef(character)
+  characterRef.current = character
   const [phase, setPhase] = useState<'loading' | 'ready' | 'error' | 'nowebgl'>('loading')
   const [pair, setPair] = useState<Pair | null>(null)
   const [game, setGame] = useState<Game>({ round: 1, xp: 0, streak: 0, votes: 0 })
@@ -156,7 +162,7 @@ export function HeroArena() {
           if (!r.ok) throw new Error(`Hero manifest request failed (${r.status})`)
           return r.json() as Promise<{ clips: ManifestClip[] }>
         }),
-        scene.init(),
+        scene.init(characterRef.current),
       ])
       if (disposed) return
       const clips = manifest.clips.filter(c => c && c.id && c.file)
@@ -183,6 +189,12 @@ export function HeroArena() {
       setTones(LIGHT)
     }
   }, [reduced, prefetchNext])
+
+  // Live character swap (no remount; same id as the scene's is a no-op, so the mount
+  // pass above is not doubled). Failures leave the current robots in place.
+  useEffect(() => {
+    sceneRef.current?.setCharacter(character).catch(() => {})
+  }, [character.id])
 
   // Mirror the per-half tones onto <html> while the hero is under the fixed nav, so
   // the nav can follow the split (hero-arena.css). Each nav part is tagged with the
@@ -295,19 +307,28 @@ export function HeroArena() {
   }, [playing, vote])
   pickRef.current = pick
 
-  // Keyboard: A / ArrowLeft, B / ArrowRight (T = tie, S = skip) while the arena is on screen.
+  // Keyboard is the primary way to vote: A / ArrowLeft, B / ArrowRight (T = tie, S = skip),
+  // only while the arena is on screen and never while typing in a field. A key vote first
+  // flashes its half navy for a beat, then registers (the canvas pointer only orbits now).
   useEffect(() => {
+    let voteTimer = 0
+    const keyVote = (side: Side) => {
+      if (!playing) { pickRef.current(side, 'keyboard'); return } // first press starts playback
+      if (busyRef.current || voteTimer) return
+      sceneRef.current?.flashSide(side)
+      voteTimer = window.setTimeout(() => { voteTimer = 0; pickRef.current(side, 'keyboard') }, 160)
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isEditable(e.target)) return
+      if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditable(e.target)) return
       if (!inViewRef.current || phase !== 'ready') return
       const k = e.key.toLowerCase()
-      if (k === 'a' || e.key === 'ArrowLeft') { e.preventDefault(); pickRef.current('A', 'keyboard') }
-      else if (k === 'b' || e.key === 'ArrowRight') { e.preventDefault(); pickRef.current('B', 'keyboard') }
+      if (k === 'a' || e.key === 'ArrowLeft') { e.preventDefault(); keyVote('A') }
+      else if (k === 'b' || e.key === 'ArrowRight') { e.preventDefault(); keyVote('B') }
       else if (k === 't' && playing) { e.preventDefault(); void vote('tie', 'keyboard') }
       else if (k === 's' && playing) { e.preventDefault(); void vote('skip', 'keyboard') }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey); window.clearTimeout(voteTimer) }
   }, [phase, playing, vote])
 
   // Keyboard focus (focus-visible only, so a tap or click doesn't leave the dark

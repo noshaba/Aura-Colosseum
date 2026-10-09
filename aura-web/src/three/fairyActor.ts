@@ -6,6 +6,7 @@
 import * as THREE from 'three'
 import type { ActorPalette, PreparedClip } from './g1Actor'
 import { FairyRig, createPoseSample, dressFairy, type FairyAsset } from './fairyRig'
+import type { MixamoCharacter } from './characters'
 
 const J = 34
 
@@ -33,8 +34,9 @@ export class FairyActor implements ArenaActor {
   private tmpB = new THREE.Quaternion()
 
   /** displayHeight: bind-pose height the fairy is fitted to, in arena metres. */
-  constructor(asset: FairyAsset, palette: ActorPalette, dimColor: number, opts: { displayHeight: number }) {
-    this.rig = new FairyRig(asset)
+  /** def: the registry entry (features: fingers / wings); defaults to the selected Mixamo character. */
+  constructor(asset: FairyAsset, palette: ActorPalette, dimColor: number, opts: { displayHeight: number }, def?: MixamoCharacter) {
+    this.rig = new FairyRig(asset, def)
     this.dimTint.set(dimColor)
     // Her baked colours stay; the arena tones act on top (colour multiplier + emissive rim).
     const { body, ink } = dressFairy(this.rig, asset, { ink: palette.outline })

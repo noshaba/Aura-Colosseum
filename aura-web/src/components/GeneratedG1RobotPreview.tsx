@@ -6,7 +6,8 @@ import { RobotFlare, effectorsByName } from '../three/robotFlare'
 import { toonStylize, type ToonStylizeHandle } from '../three/toonStylize'
 import { createThickPath } from '../three/thickLines'
 import { FILE_TO_JOINT, loadGeometry, loadMeshTransforms, matrixToQuat, type G1Preview } from '../three/g1Rig'
-import { FAIRY_EFFECTORS, FairyRig, ROBOT_MODEL, createPoseSample, dressFairy, loadFairyAsset, sampleFromPreview } from '../three/fairyRig'
+import { FairyRig, createPoseSample, dressFairy, loadMixamoAsset, sampleFromPreview } from '../three/fairyRig'
+import { useCharacter } from '../hooks/useCharacter'
 
 /** Bind-pose height the fairy is fitted to here, in this viewer's (G1-sized) metres. */
 const FAIRY_DISPLAY_HEIGHT = 1.4
@@ -58,6 +59,7 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
   const [progress, setProgress] = useState(0)
   const pausedRef = useRef(false)
   pausedRef.current = paused
+  const { character } = useCharacter()
 
   useEffect(() => {
     setPaused(false)
@@ -68,7 +70,9 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
     let raf = 0
     let data: G1Preview | null = null
     let rig: RigItem[] = []
-    // Blossom Fairy path (ROBOT_MODEL === 'fairy'): one skinned clone retargeted from the G1 joints.
+    // mixamo-retarget character (three/characters.ts): one skinned clone retargeted from the G1 joints.
+    // g1-rigid: the STL parts placed per joint.
+    const mixamo = character.kind === 'mixamo-retarget' ? character : null
     let fairy: FairyRig | null = null
     let fairyMats: THREE.Material[] = []
     const fairySample = createPoseSample()
@@ -122,13 +126,13 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
     }
     const observer = new ResizeObserver(resize); observer.observe(el); resize()
 
-    const base = `${import.meta.env.BASE_URL || '/'}models/g1-native/`
+    const base = `${import.meta.env.BASE_URL || '/'}${character.kind === 'g1-rigid' ? character.modelBase : 'models/g1-native/'}`
     Promise.all([
       fetch(file, { cache: 'no-store' }).then(async response => {
         if (!response.ok) throw new Error(`Generated motion request failed (${response.status})`)
         return response.json() as Promise<G1Preview>
       }),
-      ROBOT_MODEL === 'fairy' ? loadFairyAsset() : loadMeshTransforms(base),
+      mixamo ? loadMixamoAsset(mixamo) : loadMeshTransforms(base),
     ]).then(async ([preview, model]) => {
       if (disposed) return
       if (preview.format !== 'g1-joints-v2' || !preview.positions?.length || !preview.global_rot_mats?.length) {
@@ -136,8 +140,8 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
       }
       data = preview
       setDuration(preview.positions.length / preview.fps)
-      if (!(model instanceof Map)) {
-        fairy = new FairyRig(model)
+      if (!(model instanceof Map) && mixamo) {
+        fairy = new FairyRig(model, mixamo)
         const fit = FAIRY_DISPLAY_HEIGHT / fairy.height
         fairy.root.scale.setScalar(fit)
         travelScale = fit * fairy.scale
@@ -149,7 +153,7 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
       const entries = fairy ? [] : [...FILE_TO_JOINT.entries()]
       if (!fairy) marbleTexture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL || '/'}textures/marble-gold.png`)
       const marble = marbleTexture
-      rig = (await Promise.all(entries.map(async ([meshFile, joint]) => {
+      const built = (await Promise.all(entries.map(async ([meshFile, joint]) => {
         const transform = transforms.get(meshFile) || { pos: new THREE.Vector3(), quat: new THREE.Quaternion() }
         const geometry = (await loadGeometry(`${base}meshes/${meshFile}`)).clone()
         const mesh = new THREE.Mesh(geometry, materialFor(meshFile, marble!))
@@ -159,12 +163,20 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
         motionRoot.add(mesh)
         return { mesh, joint, geomPos: transform.pos.clone(), geomQuat: transform.quat.clone() }
       }))).filter(Boolean)
-      // Paint the G1 body into the world's palette language (toonStylize.ts); the fairy already
-      // gets it in createFairyMaterial (fairyRig.ts).
-      if (!fairy) stylized = toonStylize(motionRoot)
+      if (disposed) { // switched (character or clip) while the STL parts were loading: cleanup already ran
+        built.forEach(item => {
+          item.mesh.geometry.dispose(); (item.mesh.material as THREE.Material).dispose()
+          item.mesh.children.forEach(child => { if (child instanceof THREE.Mesh) (child.material as THREE.Material).dispose() })
+        })
+        return
+      }
+      rig = built
+      // Paint the G1 body into the world's palette language (toonStylize.ts); mixamo bodies already
+      // get it in createFairyMaterial (fairyRig.ts).
+      if (character.kind === 'g1-rigid') stylized = toonStylize(motionRoot)
       // Fairy flare riding the fastest limb (hands, feet, head); none under reduced motion.
       if (!prefersReducedMotion()) {
-        flare = new RobotFlare(effectorsByName(motionRoot, fairy ? FAIRY_EFFECTORS : /rubber_hand|ankle_roll_link|head_link/i), { scale: 1, strength: 0.8, layer: AURA_OVERLAY_LAYER })
+        flare = new RobotFlare(effectorsByName(motionRoot, character.effectors), { scale: 1, strength: 0.8, layer: AURA_OVERLAY_LAYER })
         scene.add(flare.points)
       }
 
@@ -238,15 +250,19 @@ export function GeneratedG1RobotPreview({ file, compact = false }: { file: strin
         item.mesh.geometry.dispose(); (item.mesh.material as THREE.Material).dispose()
         item.mesh.children.forEach(child => { if (child instanceof THREE.Mesh) (child.material as THREE.Material).dispose() })
       })
-      stylized?.dispose()
+      stylized?.dispose(); flare?.dispose()
       fairy?.dispose(); fairyMats.forEach(m => m.dispose()) // fairy geometry is shared (cached GLB)
-      path?.dispose(); flare?.dispose(); marbleTexture?.dispose(); world.dispose(); renderer.dispose(); renderer.domElement.remove()
+      stylized = null; flare = null
+      path?.dispose(); marbleTexture?.dispose(); world.dispose()
+      renderer.dispose(); renderer.forceContextLoss() // a character switch rebuilds the viewer: free the context now
+      renderer.domElement.remove()
     }
-  }, [file])
+    // character is read inside; the registry entry is stable per id.
+  }, [file, character.id])
 
   return <div className={compact ? 'generated-g1-player compact' : 'generated-g1-player'}>
     <div className="generated-g1-canvas" ref={mount} />
-    <div className="generated-g1-overlay"><span><i /> AURA → {ROBOT_MODEL === 'fairy' ? 'FAIRY' : 'G1'}</span><small>{status}</small></div>
+    <div className="generated-g1-overlay"><span><i /> AURA → {character.tag}</span><small>{status}</small></div>
     <div className="generated-g1-controls">
       <button type="button" onClick={() => setPaused(value => !value)}>{paused ? '▶ Play' : 'Ⅱ Pause'}</button>
       <div><span style={{ width: `${progress * 100}%` }} /></div>

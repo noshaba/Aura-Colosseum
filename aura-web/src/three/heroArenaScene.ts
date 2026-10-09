@@ -6,7 +6,8 @@
 import * as THREE from 'three'
 import { G1Actor, loadArenaGeometries, type PreparedClip } from './g1Actor'
 import { FairyActor, type ArenaActor } from './fairyActor'
-import { FAIRY_EFFECTORS, ROBOT_MODEL, loadFairyAsset } from './fairyRig'
+import { loadMixamoAsset } from './fairyRig'
+import { getCurrentCharacter, type CharacterDef } from './characters'
 import { AURA_OVERLAY_LAYER, AURA_PALETTE, auraWorldScheme, copyAuraWorldScheme, createAuraWorld, lerpAuraWorldScheme, type AuraWorld, type AuraWorldScheme, type AuraWorldSplit } from './auraWorld'
 import { FLARE_COLORS, FLARE_COLS, FLARE_STOPS, GLOW_BLEND, flarePointFrag, premultiply, uploadLiveRange } from './flareShared'
 import { RobotFlare, effectorsByName } from './robotFlare'
@@ -320,6 +321,12 @@ const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3)
 const easeInCubic = (x: number) => x * x * x
 const easeOutBack = (x: number) => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2) }
 const TONE_SECONDS = 0.35
+/** Question label type sizes (canvas px on a 1400-wide label): question line(s) and the keycap hint line. */
+const QUESTION_TYPE = { wide: { size: 56, lines: 1, hint: 38 }, compact: { size: 76, lines: 2, hint: 56 } } as const
+/** Orbit limits: yaw well under 90° keeps lane A on the left half; pitch keeps the camera above the ground. */
+const ORBIT_YAW_MAX = THREE.MathUtils.degToRad(38)
+const ORBIT_PITCH_MIN = -0.1
+const ORBIT_PITCH_MAX = 0.3
 const FEEDBACK_HOLD_SECONDS = 1.1
 
 
@@ -426,6 +433,8 @@ type Lane = {
   root: THREE.Group
   lift: THREE.Group
   actor: ArenaActor
+  /** The lane's current clip (kept so a character swap can hand it to the new body). */
+  clip: PreparedClip | null
   hit: THREE.Mesh
   progress: THREE.Mesh
   progressSegs: number
@@ -527,12 +536,22 @@ export class HeroArenaScene {
   private laneX = 1.15
   private camDist = 7
   private camTarget = new THREE.Vector3(0, 0.8, 0)
-  private parallax = new THREE.Vector2()
+  /**
+   * Drag-to-orbit (replaces hover-to-highlight / tap-to-vote). Damped yaw/pitch around the arena
+   * centre; yaw is clamped so lane A stays on the left half and B on the right (the camera always
+   * looks at the arena centre, so the screen-centre A|B split stays valid). Touch: horizontal drags
+   * orbit (yaw only), vertical swipes scroll the page (canvas has touch-action: pan-y). No zoom.
+   */
+  private orbit = { yaw: 0, pitch: 0, tYaw: 0, tPitch: 0, dragging: false, pid: -1, lx: 0, ly: 0, sx: 0, sy: 0, moved: false, touch: false, idle: 99 }
+  /** A brief navy flash on the side a key vote picked (HeroArena calls flashSide before voting). */
+  private flash: Side | null = null
+  private flashTimer = 0
+  private coarsePointer = typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none) and (pointer: coarse)').matches
   private hudLeft = new CanvasLabel(600, 128)
   private hudRight = new CanvasLabel(440, 128)
   // Tall enough for two lines on narrow screens; text is bottom-aligned so the
   // plane's bottom edge stays just above the DOM vote controls.
-  private hudQuestion = new CanvasLabel(1400, 220)
+  private hudQuestion = new CanvasLabel(1400, 300)
   private questionCompact = false
   private hudLeftMesh: THREE.Mesh
   private hudRightMesh: THREE.Mesh
@@ -550,6 +569,10 @@ export class HeroArenaScene {
   private observer: ResizeObserver
   private marble: THREE.Texture | null = null
   private geometries: THREE.BufferGeometry[] = []
+  /** Character the lanes show, or are loading (setCharacter). */
+  private characterId: string | null = null
+  /** Bumped by every setCharacter call: a load that finishes after a newer call is dropped. */
+  private bodyToken = 0
   private host: HTMLElement
 
   constructor(host: HTMLElement, private opts: { reducedMotion: boolean; modelBase: string; callbacks: ArenaCallbacks }) {
@@ -638,8 +661,12 @@ export class HeroArenaScene {
     document.fonts?.ready.then(() => { if (!this.disposed) { this.redrawText(); this.dirty = true } }).catch(() => {})
 
     const el = r.domElement
+    el.style.cursor = 'grab'
+    el.addEventListener('pointerdown', this.onPointerDown)
     el.addEventListener('pointermove', this.onPointerMove)
     el.addEventListener('pointerleave', this.onPointerLeave)
+    el.addEventListener('pointerup', this.onPointerUp)
+    el.addEventListener('pointercancel', this.onPointerUp)
     el.addEventListener('click', this.onClick)
   }
 
@@ -751,7 +778,7 @@ export class HeroArenaScene {
     spot.target = lift
     root.add(spot)
 
-    return { side, root, lift, actor, hit, progress, progressSegs: segs, badge, caption, captionMesh, spot, label: '', liftV: 0, dimV: 0, spotV: 0, scaleV: 0, hoverV: 0 }
+    return { side, root, lift, actor, clip: null, hit, progress, progressSegs: segs, badge, caption, captionMesh, spot, label: '', liftV: 0, dimV: 0, spotV: 0, scaleV: 0, hoverV: 0 }
   }
 
   private placeholderActor() {
@@ -786,64 +813,95 @@ export class HeroArenaScene {
     return { points, vel: new Float32Array(n * 3) }
   }
 
-  /** Loads the shared G1 STL rig and builds both robots. */
-  async init() {
-    if (ROBOT_MODEL === 'fairy') return this.initFairy()
-    // STL rig and marble texture are independent downloads: fetch them together.
-    const [assets, marble] = await Promise.all([
-      loadArenaGeometries(this.opts.modelBase),
-      new THREE.TextureLoader().loadAsync(this.opts.modelBase.replace(/models\/g1-native\/$/, '') + 'textures/marble-gold.png').catch(() => null),
-    ])
-    if (this.disposed) { assets.geometries.forEach(g => g.dispose()); marble?.dispose(); return }
-    this.geometries = [...assets.geometries.values()]
-    if (marble) {
-      marble.colorSpace = THREE.SRGBColorSpace
-      marble.wrapS = marble.wrapT = THREE.RepeatWrapping
-      marble.repeat.set(0.62, 0.62); marble.center.set(0.5, 0.5); marble.rotation = -0.08
-      this.marble = marble
+  /** Builds both robots for the selected character (three/characters.ts). */
+  init(def: CharacterDef = getCurrentCharacter()) {
+    return this.setCharacter(def)
+  }
+
+  /**
+   * Shows `def` on both lanes, live: loads its body, scales the current robots out,
+   * swaps them (old actors, toonStylize handles, robot flares and, when leaving the G1,
+   * its STL geometries and marble are disposed), hands each lane its clip back (time
+   * comes from matchTime, look from the tick) and scales them in. Instant under reduced
+   * motion or while the arena is off screen. Overlapping calls: the latest wins.
+   */
+  async setCharacter(def: CharacterDef) {
+    if (this.disposed || def.id === this.characterId) return
+    this.characterId = def.id
+    const token = ++this.bodyToken
+    const root = this.opts.modelBase.replace(/models\/g1-native\/$/, '')
+    let built: { make: () => ArenaActor; geometries: THREE.BufferGeometry[]; marble: THREE.Texture | null }
+    try {
+      built = await this.loadBody(def, root)
+    } catch (err) {
+      if (token === this.bodyToken) this.characterId = null // let a later call retry this character
+      throw err
     }
+
+    const stale = () => this.disposed || token !== this.bodyToken
+    const release = () => { built.geometries.forEach(g => g.dispose()); built.marble?.dispose() }
+    if (stale()) { release(); return }
+
+    const animate = this.ready && this.active && !this.opts.reducedMotion
+    const shown = this.lanes.map(l => (l.clip ? 1 : 0))
+    if (animate) {
+      const from = this.lanes.map(l => l.scaleV)
+      await this.tween(0.22, k => this.lanes.forEach((l, i) => { l.scaleV = from[i] * (1 - k) }), easeInCubic)
+      if (stale()) { release(); return }
+    }
+
+    // Swap: handles and flares first (they hold the old bodies), then the actors, then shared buffers.
+    this.robotFlares.forEach(f => f.dispose()); this.robotFlares = []
+    this.stylized.forEach(h => h.dispose()); this.stylized = []
     for (const lane of this.lanes) {
       const holder = lane.actor.group.parent!
       lane.actor.dispose()
-      lane.actor = new G1Actor(assets, ROBOT, marble, new THREE.Color(this.theme.s500).getHex())
+      lane.actor = built.make()
       lane.actor.group.visible = false
       lane.actor.group.scale.setScalar(0.0001)
       holder.add(lane.actor.group)
-      this.stylized.push(toonStylize(lane.actor.group))
+      if (lane.clip) lane.actor.setClip(lane.clip) // visible again; pose follows matchTime in the tick
+      // G1: paint into the world's palette (toonStylize.ts); mixamo bodies get it in createFairyMaterial.
+      if (def.kind === 'g1-rigid') this.stylized.push(toonStylize(lane.actor.group))
     }
+    this.geometries.forEach(g => g.dispose()); this.marble?.dispose()
+    this.geometries = built.geometries; this.marble = built.marble
     if (!this.opts.reducedMotion) {
       this.robotFlares = this.lanes.map(lane => {
         // hands, feet and head; subtle, so the motion itself stays what's judged
-        const flare = new RobotFlare(effectorsByName(lane.actor.group, /rubber_hand|ankle_roll_link|head_link/i), { scale: 1, strength: 0.7, layer: AURA_OVERLAY_LAYER })
+        const flare = new RobotFlare(effectorsByName(lane.actor.group, def.effectors), { scale: 1, strength: 0.7, layer: AURA_OVERLAY_LAYER })
         this.scene.add(flare.points)
         return flare
       })
     }
+    const first = !this.ready
     this.ready = true
+    this.dirty = true
+    if (first) return // setMatchup animates the first robots in
+    if (animate) await this.tween(0.42, k => this.lanes.forEach((l, i) => { l.scaleV = shown[i] * k }), easeOutBack)
+    else this.lanes.forEach((l, i) => { l.scaleV = Math.max(l.scaleV, shown[i]) })
     this.dirty = true
   }
 
-  /** Both lanes draw the Blossom Fairy (one shared GLB, one clone per lane), fitted to the G1's stage height. */
-  private async initFairy() {
-    const asset = await loadFairyAsset(this.opts.modelBase.replace(/models\/g1-native\/$/, ''))
-    if (this.disposed) return
-    for (const lane of this.lanes) {
-      const holder = lane.actor.group.parent!
-      lane.actor.dispose()
-      lane.actor = new FairyActor(asset, ROBOT, new THREE.Color(this.theme.s500).getHex(), { displayHeight: 1.4 })
-      lane.actor.group.visible = false
-      lane.actor.group.scale.setScalar(0.0001)
-      holder.add(lane.actor.group) // painted-character pass: applied in createFairyMaterial (fairyRig.ts)
+  /** Downloads / clones what `def` needs; `make` builds one lane actor from it. */
+  private async loadBody(def: CharacterDef, root: string): Promise<{ make: () => ArenaActor; geometries: THREE.BufferGeometry[]; marble: THREE.Texture | null }> {
+    const dim = new THREE.Color(this.theme.s500).getHex()
+    if (def.kind === 'g1-rigid') {
+      // STL rig and marble texture are independent downloads: fetch them together.
+      const [assets, marble] = await Promise.all([
+        loadArenaGeometries(root + def.modelBase),
+        new THREE.TextureLoader().loadAsync(root + 'textures/marble-gold.png').catch(() => null),
+      ])
+      if (marble) {
+        marble.colorSpace = THREE.SRGBColorSpace
+        marble.wrapS = marble.wrapT = THREE.RepeatWrapping
+        marble.repeat.set(0.62, 0.62); marble.center.set(0.5, 0.5); marble.rotation = -0.08
+      }
+      return { make: () => new G1Actor(assets, ROBOT, marble, dim), geometries: [...assets.geometries.values()], marble }
     }
-    if (!this.opts.reducedMotion) {
-      this.robotFlares = this.lanes.map(lane => {
-        const flare = new RobotFlare(effectorsByName(lane.actor.group, FAIRY_EFFECTORS), { scale: 1, strength: 0.7, layer: AURA_OVERLAY_LAYER })
-        this.scene.add(flare.points)
-        return flare
-      })
-    }
-    this.ready = true
-    this.dirty = true
+    // One shared GLB (cached), one clone per lane, fitted to the G1's stage height.
+    const asset = await loadMixamoAsset(def, root)
+    return { make: () => new FairyActor(asset, ROBOT, dim, { displayHeight: 1.4 }, def), geometries: [], marble: null }
   }
 
   // ------------------------------------------------------------------ public API
@@ -864,6 +922,14 @@ export class HeroArenaScene {
   /** Keyboard focus (or mouse hover) of the DOM A/B buttons: rim highlight + dark scheme. */
   setFocusSide(side: Side | null) { this.focused = side; this.dirty = true; this.syncTone() }
 
+  /** Brief navy flash on one half (a key vote is about to register). */
+  flashSide(side: Side, ms = 220) {
+    if (this.disposed) return
+    this.flash = side; this.syncTone()
+    window.clearTimeout(this.flashTimer)
+    this.flashTimer = window.setTimeout(() => { this.flash = null; this.syncTone() }, ms)
+  }
+
   getTones(): SideTones { return { A: this.sides.A.tone, B: this.sides.B.tone } }
 
   setHud(hud: HudState) { this.hud = hud; this.drawHud(); this.dirty = true }
@@ -880,6 +946,7 @@ export class HeroArenaScene {
     }
     const contents = [a, b]
     this.lanes.forEach((l, i) => {
+      l.clip = contents[i].clip
       l.actor.setClip(contents[i].clip)
       this.robotFlares[i]?.reset()
       l.label = contents[i].label
@@ -952,9 +1019,13 @@ export class HeroArenaScene {
     cancelAnimationFrame(this.raf)
     this.observer.disconnect()
     const el = this.renderer.domElement
+    el.removeEventListener('pointerdown', this.onPointerDown)
     el.removeEventListener('pointermove', this.onPointerMove)
     el.removeEventListener('pointerleave', this.onPointerLeave)
+    el.removeEventListener('pointerup', this.onPointerUp)
+    el.removeEventListener('pointercancel', this.onPointerUp)
     el.removeEventListener('click', this.onClick)
+    window.clearTimeout(this.flashTimer)
     el.removeEventListener('webglcontextlost', this.onContextLost)
     this.tweens.forEach(t => t.resolve()); this.tweens = []
     this.world.dispose() // removes and disposes the world group + composite targets
@@ -1065,8 +1136,10 @@ export class HeroArenaScene {
   private questionMetrics() {
     const compact = this.width < 560
     const widthPx = Math.min(700, this.width - 2 * HUD_PX.pad)
-    const font = (compact ? 76 : 56) * widthPx / this.hudQuestion.w
-    const blockPx = (compact ? 2 : 1) * font * 1.18
+    const k = widthPx / this.hudQuestion.w
+    const q = QUESTION_TYPE[compact ? 'compact' : 'wide']
+    // question line(s) + the "Press A or B" hint line with keycaps (see drawHud)
+    const blockPx = (q.lines * q.size * 1.18 + q.hint * 1.6) * k
     const controlsPx = compact ? 12 + 44 : 16 + 44 // .hero-arena__controls: bottom offset + 44px bar (measured)
     return { compact, widthPx, blockPx, bottomPx: controlsPx + 16 }
   }
@@ -1384,23 +1457,55 @@ export class HeroArenaScene {
       ctx.textAlign = 'right'; ctx.fillText(`×${h.streak}`, w - 30, 102)
     })
     this.hudQuestion.draw((ctx, w, hh) => {
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'
-      // Desktop: one line at 56px on a 1400px canvas shown 700 CSS px wide (~28px).
-      // Narrow screens: two bigger lines so the text isn't squeezed by maxWidth.
+      ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'
+      // Bottom-aligned block: the question (one line wide, two lines compact), then a hint line
+      // with keycap chips: "Press [A] or [B] to choose · drag to look around" (touch: "Tap ... swipe").
+      const q = QUESTION_TYPE[this.questionCompact ? 'compact' : 'wide']
       const lines = h.playing
-        ? (this.questionCompact ? ['Which one moves more naturally?', 'Tap a robot.'] : ['Which one moves more naturally? Tap a robot.'])
+        ? (this.questionCompact ? ['Which one moves', 'more naturally?'] : ['Which one moves more naturally?'])
         : (this.questionCompact ? ['Press play, then pick', 'the motion you prefer.'] : ['Press play, then pick the motion you prefer.'])
-      const size = this.questionCompact ? 76 : 56
-      ctx.font = `600 ${size}px ${t.font}`
-      const lineH = size * 1.18
+      const lineH = q.size * 1.18, hintH = q.hint * 1.6
+      const halo = (size: number) => { ctx.strokeStyle = W.paper; ctx.lineWidth = Math.round(size * 0.3) }
+      ctx.textAlign = 'center'
+      ctx.font = `600 ${q.size}px ${t.font}`
       lines.forEach((text, i) => {
-        const y = hh - 16 - lineH / 2 - (lines.length - 1 - i) * lineH
-        // Paper halo keeps the line legible where it crosses the robots or the flare.
-        ctx.strokeStyle = W.paper; ctx.lineWidth = Math.round(size * 0.3)
-        ctx.strokeText(text, w / 2, y, w - 40)
-        ctx.fillStyle = W.ink
-        ctx.fillText(text, w / 2, y, w - 40)
+        const y = hh - 16 - hintH - lineH / 2 - (lines.length - 1 - i) * lineH
+        halo(q.size); ctx.strokeText(text, w / 2, y, w - 40)
+        ctx.fillStyle = W.ink; ctx.fillText(text, w / 2, y, w - 40)
       })
+      // hint line with keycaps, centred and shrunk to fit
+      const verb = this.coarsePointer ? 'Tap' : 'Press', look = this.coarsePointer ? 'swipe to look around' : 'drag to look around'
+      const parts: (string | { key: string })[] = [`${verb} `, { key: 'A' }, ' or ', { key: 'B' }, ` to choose · ${look}`]
+      let size = q.hint
+      const capW = (sz: number) => sz * 1.25, gap = (sz: number) => sz * 0.18
+      const measure = (sz: number) => {
+        ctx.font = `500 ${sz}px ${t.font}`
+        return parts.reduce((acc, p) => acc + (typeof p === 'string' ? ctx.measureText(p).width : capW(sz) + 2 * gap(sz)), 0)
+      }
+      let total = measure(size)
+      if (total > w - 40) { size *= (w - 40) / total; total = measure(size) }
+      let x = (w - total) / 2
+      const y = hh - 16 - hintH / 2
+      ctx.textAlign = 'left'
+      for (const p of parts) {
+        if (typeof p === 'string') {
+          ctx.font = `500 ${size}px ${t.font}`
+          halo(size); ctx.strokeText(p, x, y)
+          ctx.fillStyle = W.ink; ctx.fillText(p, x, y)
+          x += ctx.measureText(p).width
+        } else {
+          // keycap chip: paper face, ink border, a thin ink "depth" edge underneath, ink letter
+          const cw = capW(size), ch = size * 1.22, cx = x + gap(size), top = y - ch / 2, r = size * 0.22
+          ctx.fillStyle = W.ink
+          ctx.beginPath(); ctx.roundRect(cx, top + size * 0.1, cw, ch, r); ctx.fill()
+          ctx.fillStyle = W.paper; ctx.strokeStyle = W.ink; ctx.lineWidth = Math.max(2, size * 0.08)
+          ctx.beginPath(); ctx.roundRect(cx, top, cw, ch, r); ctx.fill(); ctx.stroke()
+          ctx.fillStyle = W.ink; ctx.textAlign = 'center'; ctx.font = `700 ${size * 0.78}px ${t.mono}`
+          ctx.fillText(p.key, cx + cw / 2, y + size * 0.02)
+          ctx.textAlign = 'left'
+          x += cw + 2 * gap(size)
+        }
+      }
     })
   }
 
@@ -1410,7 +1515,7 @@ export class HeroArenaScene {
     let changed = false
     for (const side of ['A', 'B'] as Side[]) {
       const st = this.sides[side]
-      const next: Tone = st.hold ? 'feedback' : (this.hovered === side || this.focused === side) ? 'dark' : 'light'
+      const next: Tone = st.hold ? 'feedback' : (this.flash === side || this.hovered === side || this.focused === side) ? 'dark' : 'light'
       if (next === st.tone) continue
       st.tone = next
       for (const k of SCHEME_KEYS) st.from[k].copy(st.col[k])
@@ -1435,7 +1540,7 @@ export class HeroArenaScene {
 
   /** For the world props: is the pointer (NDC) over a robot's hit proxy or the play sprite? */
   private pointerOnUi(x: number, y: number) {
-    if (this.hovered) return true
+    if (this.orbit.dragging) return true // the pointer is orbiting the camera
     this.propsNdc.set(x, y)
     this.raycaster.setFromCamera(this.propsNdc, this.camera)
     for (const l of this.lanes) if (this.raycaster.intersectObject(l.hit, false).length) return true
@@ -1458,29 +1563,75 @@ export class HeroArenaScene {
     this.pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
   }
 
+  private onPointerDown = (e: PointerEvent) => {
+    if (e.button !== 0 || this.orbit.dragging) return
+    const o = this.orbit
+    o.dragging = true; o.pid = e.pointerId; o.moved = false; o.touch = e.pointerType !== 'mouse'
+    o.lx = o.sx = e.clientX; o.ly = o.sy = e.clientY
+    if (!o.touch) { this.renderer.domElement.setPointerCapture?.(e.pointerId); this.renderer.domElement.style.cursor = 'grabbing' }
+  }
+
   private onPointerMove = (e: PointerEvent) => {
-    if (e.pointerType === 'touch') return
-    this.setPointer(e)
-    this.parallax.set(this.pointer.x, this.pointer.y)
-    const { side, play } = this.hitTest()
-    if (side !== this.hovered) { this.hovered = side; this.opts.callbacks.onHover?.(side); this.syncTone() }
-    this.renderer.domElement.style.cursor = side || play ? 'pointer' : 'default'
+    const o = this.orbit
+    if (!o.dragging) { this.hoverAt(e); return }
+    if (e.pointerId !== o.pid) return
+    const dx = e.clientX - o.lx, dy = e.clientY - o.ly
+    o.lx = e.clientX; o.ly = e.clientY
+    if (!o.moved && Math.hypot(e.clientX - o.sx, e.clientY - o.sy) > 5) o.moved = true
+    if (!o.moved) return
+    // touch: yaw only (vertical swipes belong to page scroll; the browser takes them via pan-y)
+    o.tYaw = THREE.MathUtils.clamp(o.tYaw - dx * 0.0055, -ORBIT_YAW_MAX, ORBIT_YAW_MAX)
+    if (!o.touch) o.tPitch = THREE.MathUtils.clamp(o.tPitch + dy * 0.004, ORBIT_PITCH_MIN, ORBIT_PITCH_MAX)
+    o.idle = 0
     this.dirty = true
   }
 
-  private onPointerLeave = () => {
-    this.parallax.set(0, 0)
-    if (this.hovered) { this.hovered = null; this.opts.callbacks.onHover?.(null); this.syncTone() }
-    this.renderer.domElement.style.cursor = 'default'
-    this.dirty = true
+  private onPointerUp = (e: PointerEvent) => {
+    const o = this.orbit
+    if (!o.dragging || e.pointerId !== o.pid) return
+    o.dragging = false; o.pid = -1; o.idle = 0
+    this.renderer.domElement.style.cursor = 'grab'
   }
 
+  /**
+   * Hover (mouse / pen, no button pressed): the half under the pointer takes the navy hover
+   * scheme, decided against the split line itself (ribbon x at the pointer's height), so it
+   * always matches the visible A | B halves. Frozen while dragging; touch has no hover. Never votes.
+   */
+  private hoverAt(e: PointerEvent) {
+    if (e.pointerType === 'touch' || e.buttons !== 0) return
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    const x = e.clientX - rect.left, y = e.clientY - rect.top
+    this.setHovered(x < this.ribbonX(y) ? 'A' : 'B')
+  }
+  private setHovered(side: Side | null) {
+    if (side === this.hovered) return
+    this.hovered = side
+    this.opts.callbacks.onHover?.(side)
+    this.syncTone()
+    this.dirty = true
+  }
+  private onPointerLeave = () => { if (!this.orbit.dragging) this.setHovered(null) }
+
+  /** Clicks only start playback via the play sprite; voting is A / B (keys or the buttons). A drag never counts. */
   private onClick = (e: MouseEvent) => {
-    if (!this.ready) return
+    if (!this.ready || this.orbit.moved) return
     this.setPointer(e)
-    const { side, play } = this.hitTest()
+    const { play } = this.hitTest()
     if (play) this.opts.callbacks.onPlay()
-    else if (side) this.opts.callbacks.onPick(side)
+  }
+
+  /** Damped orbit; after a few idle seconds it eases back to the default framing (snaps under reduced motion). */
+  private stepOrbit(dt: number) {
+    const o = this.orbit, reduced = this.opts.reducedMotion
+    if (!o.dragging) o.idle += dt
+    if (!o.dragging && o.idle > 3.5) {
+      if (reduced) { o.tYaw = 0; o.tPitch = 0 }
+      else { const k = Math.exp(-dt * 2.2); o.tYaw *= k; o.tPitch *= k }
+    }
+    if (reduced) { o.yaw = o.tYaw; o.pitch = o.tPitch }
+    else { const k = 1 - Math.exp(-dt * 9); o.yaw += (o.tYaw - o.yaw) * k; o.pitch += (o.tPitch - o.pitch) * k }
+    return Math.abs(o.yaw - o.tYaw) > 1e-4 || Math.abs(o.pitch - o.tPitch) > 1e-4 || Math.abs(o.yaw) > 1e-4
   }
 
   private onContextLost = (e: Event) => {
@@ -1513,13 +1664,15 @@ export class HeroArenaScene {
 
     for (const st of [this.sides.A, this.sides.B]) if (st.t < 1) { this.stepTone(st, reduced ? 1 : dt); animating = true }
 
+    if (this.stepOrbit(dt)) animating = true
+
     // Fairy flare: head flight, dust, ribbon flash; VS punch decay.
     this.stepFlare(dt)
     if (!reduced) { this.vsPunch *= Math.exp(-dt * 6); this.vsFlip *= Math.exp(-dt * 4.5) }
 
     // Hover / keyboard-focus rim, smoothed.
     for (const lane of this.lanes) {
-      const target = (this.hovered === lane.side || this.focused === lane.side) ? 1 : 0
+      const target = (this.flash === lane.side || this.hovered === lane.side || this.focused === lane.side) ? 1 : 0
       const next = reduced ? target : THREE.MathUtils.lerp(lane.hoverV, target, 1 - Math.exp(-dt * 12))
       if (Math.abs(next - lane.hoverV) > 1e-3) animating = true
       lane.hoverV = Math.abs(next - target) < 1e-3 ? target : next
@@ -1573,9 +1726,11 @@ export class HeroArenaScene {
       this.vs.scale.setScalar(1 + Math.sin(c * 2.1) * 0.015 + this.vsPunch)
       this.vsBody.rotation.y = Math.sin(c * 0.9) * 0.08 + this.vsFlip // idle turn shows the coin's edge; a vote flips it
     }
-    // No yaw: the camera stays on the x = 0 plane so the A | B split is the screen's centre line.
-    const az = 0
-    const el = 0.13 + (reduced ? 0 : Math.sin(c * 0.09) * 0.02 + this.parallax.y * 0.02)
+    // Orbit around the arena centre. The camera always looks at the centre and yaw is clamped
+    // (±ORBIT_YAW_MAX), so A stays left of the screen centre and B right: the A | B split line
+    // (screen centre) stays valid without re-projecting.
+    const az = this.orbit.yaw
+    const el = 0.13 + this.orbit.pitch + (reduced ? 0 : Math.sin(c * 0.09) * 0.02)
     const d = this.camDist
     this.camera.position.set(
       this.camTarget.x + Math.sin(az) * Math.cos(el) * d,

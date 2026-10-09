@@ -1,0 +1,146 @@
+/* Character picker (CharacterPicker.tsx). Lives in the nav dropdown as one more
+   .fx-nav__pill, so it inherits the frosted fill, height and drop-in; here only the
+   inner segmented control / menu. Palette variables from palette.css (read-only). */
+
+.char-picker {
+  --cp-ink: var(--fx-navy, #3d405b);
+  --cp-paper: var(--fx-eggshell, #f4f1de);
+  --cp-accent: var(--fx-terra, #e07a5f);
+  --cp-r-seg: 4px 24px 24px 4px; /* the nav pill's shape, one size down */
+  color: var(--cp-ink);
+  font-size: 15px;
+  line-height: 1;
+}
+.fx-nav__pill.char-picker { padding: 0 6px 0 22px; gap: 14px; }
+/* one more pill in the stagger (picker is 3rd, wallet 4th) */
+.fx-nav__panel > .fx-nav__pill:nth-child(4) { transition-delay: .15s; }
+
+.char-picker__caption {
+  font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--fx-tone-600, #4f5268);
+}
+
+/* ---- segmented (<= 3 models) ---- */
+.char-picker__track { display: flex; gap: 4px; padding: 0; }
+.char-picker__opt {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 48px; padding: 0 18px; border: 0; cursor: pointer;
+  border-radius: var(--cp-r-seg);
+  background: transparent; color: var(--cp-ink); font: inherit; white-space: nowrap;
+  transition: background-color .25s var(--fx-ease-nav, ease), color .2s var(--fx-ease-nav, ease);
+}
+@media (hover: hover) {
+  .char-picker__opt:hover:not(.is-on) { background: var(--fx-ink-10, rgba(61, 64, 91, .1)); }
+}
+.char-picker__opt.is-on { background: var(--cp-ink); color: var(--cp-paper); }
+.char-picker__opt.is-on::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--cp-accent);
+}
+.char-picker__opt:focus-visible,
+.char-picker__trigger:focus-visible { outline: 2px solid var(--cp-ink); outline-offset: 2px; }
+.char-picker__opt.is-on:focus-visible { outline-color: var(--cp-accent); }
+
+.char-picker__thumb { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: none; }
+
+/* ---- menu (> 3 models) ---- */
+.fx-nav__pill.char-picker--menu { padding: 0; position: relative; }
+.char-picker__trigger {
+  display: inline-flex; align-items: center; gap: 12px; height: 100%; padding: 0 22px;
+  border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; border-radius: inherit;
+}
+.char-picker__value { font-weight: 600; }
+.char-picker__chev {
+  width: 8px; height: 8px; margin-left: 2px; translate: 0 -2px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; rotate: 45deg;
+  transition: rotate .2s var(--fx-ease-nav, ease), translate .2s var(--fx-ease-nav, ease);
+}
+.char-picker--menu.is-open .char-picker__chev { rotate: 225deg; translate: 0 2px; }
+.char-picker__list {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 2; min-width: 100%;
+  margin: 0; padding: 6px; list-style: none; max-height: min(60vh, 360px); overflow: auto;
+  background: var(--fx-surface-nav, #ebe8d7); border-radius: 8px 24px 24px 8px;
+  box-shadow: 0 0 0 1px var(--fx-ink-5, rgba(61, 64, 91, .05)), 0 12px 32px -14px var(--fx-ink-20, rgba(61, 64, 91, .2));
+}
+.char-picker__list:focus-visible { outline: 2px solid var(--cp-ink); outline-offset: 2px; }
+.char-picker__item {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 16px;
+  border-radius: var(--cp-r-seg); cursor: pointer; white-space: nowrap;
+}
+.char-picker__item.is-active { background: var(--fx-ink-10, rgba(61, 64, 91, .1)); }
+.char-picker__item.is-on { background: var(--cp-ink); color: var(--cp-paper); }
+
+/* Phones: the dropdown pills keep their height; tighten the inner spacing. */
+@media (max-width: 480px) {
+  .fx-nav__pill.char-picker { padding: 0 5px 0 16px; gap: 10px; }
+  .char-picker__opt { padding: 0 12px; height: 46px; }
+  .char-picker__caption { font-size: 11px; }
+}
+
+@media (forced-colors: active) {
+  .char-picker__opt.is-on, .char-picker__item.is-on { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .char-picker__opt, .char-picker__chev { transition: none; }
+}
+
+/* ---- always-visible nav switch (CharacterSwitch.tsx) ----
+   A grid item of .fx-nav__inner (logo | switch | burger). Desktop: in the menu column,
+   left of the burger (overlapping cell, pushed off the burger by its width + gap).
+   <=640px: in the empty left column, so the centred logo never moves. Shorter than the
+   burger and centred on it, so the nav height (burger bottom at 92 / 72 px) is unchanged.
+   Navy pill + eggshell text, with a faint eggshell ring so it still separates over the
+   navy hero half; reads over the light and sunset halves as is. */
+.fx-nav__inner > .fx-nav__logo,
+.fx-nav__inner > .fx-nav__side,
+.fx-nav__inner > .char-switch { grid-row: 1; }
+.char-switch {
+  grid-column: 3; justify-self: end; margin-right: 72px; /* burger 60 + 12 */
+  pointer-events: auto; display: flex;
+}
+.char-switch__btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  height: 44px; padding: 0 18px 0 14px; border: 0; cursor: pointer;
+  border-radius: 22px 6px 6px 22px; /* the burger's mirrored-pill shape, one size down */
+  background: var(--fx-navy, #3d405b); color: var(--fx-eggshell, #f4f1de);
+  box-shadow: 0 0 0 1px rgba(244, 241, 222, .28);
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1; white-space: nowrap;
+  transition: background-color .25s var(--fx-ease-nav, ease), box-shadow .25s var(--fx-ease-nav, ease);
+}
+@media (hover: hover) {
+  .char-switch__btn:hover { background: var(--fx-tone-800, #34374e); box-shadow: 0 0 0 1px rgba(244, 241, 222, .5); }
+}
+.char-switch__btn:focus-visible { outline: 2px solid var(--fx-terra, #e07a5f); outline-offset: 3px; }
+.char-switch__icon { flex: none; color: var(--fx-terra, #e07a5f); animation: char-switch-pop .4s var(--fx-ease-nav, ease); }
+@keyframes char-switch-pop { from { opacity: 0; scale: .6; } to { opacity: 1; scale: 1; } }
+.char-picker__icon { flex: none; width: 20px; height: 20px; }
+.char-switch__tag { display: none; letter-spacing: .08em; font-size: 12px; }
+.char-switch__live {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+/* Tablet: short tag instead of the full name. */
+@media (max-width: 1023px) {
+  .char-switch__label { display: none; }
+  .char-switch__tag { display: inline; }
+}
+@media (max-width: 767px) {
+  .char-switch { margin-right: 64px; } /* burger 56 + 8 */
+  .char-switch__btn { height: 40px; padding: 0 14px 0 11px; gap: 7px; }
+}
+/* Phones: the menu column is too narrow for switch + burger beside a centred 210 px logo,
+   so the switch takes the empty left column. */
+@media (max-width: 640px) {
+  .char-switch { grid-column: 1; justify-self: start; margin-right: 0; }
+  .char-switch__btn { border-radius: 6px 20px 20px 6px; } /* mirrored: round side facing in */
+}
+@media (max-width: 480px) {
+  .char-switch__tag { display: none; } /* icon only: fits the ~74 px column at 390 px */
+  .char-switch__btn { padding: 0 11px; }
+}
+@media (forced-colors: active) {
+  .char-switch__btn { border: 1px solid ButtonText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .char-switch__btn { transition: none; }
+  .char-switch__icon { animation: none; }
+}
