@@ -274,7 +274,7 @@ def get_generation_inputs(args, fps: float):
 
 
 def main():
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = "cuda:0" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Using device: {device}")
 
     args = parse_args()

@@ -40,6 +40,10 @@ export AURA_MOTION_LIBRARY="${AURA_MOTION_LIBRARY:-$ROOT/aura-motion-library}"
 export AURA_TEXT2MOTION_MODEL="${AURA_TEXT2MOTION_MODEL:-g1-rp}"
 export AURA_TEXT2MOTION_STEPS="${AURA_TEXT2MOTION_STEPS:-30}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  # Apple Silicon: generator runs on MPS; ops MPS lacks fall back to CPU.
+  export PYTORCH_ENABLE_MPS_FALLBACK="${PYTORCH_ENABLE_MPS_FALLBACK:-1}"
+fi
 unset VITE_AURA_JUDGE_MODE || true
 
 TEXT_PORT=9550
@@ -107,7 +111,7 @@ cd "$ROOT"
 echo "Project: $ROOT"
 echo "Conda env: ${CONDA_DEFAULT_ENV:-$CONDA_PREFIX}"
 echo "Text encoder: CPU"
-echo "Text2Motion Aura G1 generator: loaded lazily on GPU by Aura API"
+echo "Text2Motion Aura G1 generator: loaded lazily on GPU (CUDA or MPS) by Aura API"
 echo "Text2Motion Aura denoising steps: $AURA_TEXT2MOTION_STEPS"
 echo
 

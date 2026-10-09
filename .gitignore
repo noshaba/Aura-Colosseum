@@ -13,3 +13,7 @@ aura-web/dist/
 .DS_Store
 .vscode/
 *.tsbuildinfo
+
+# Claude Code agents/skills (kept local)
+.claude/
+skills-lock.json
