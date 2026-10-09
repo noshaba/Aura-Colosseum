@@ -79,7 +79,7 @@ function matrixToQuat(matrix: number[][]) {
   return new THREE.Quaternion().setFromRotationMatrix(m).normalize()
 }
 
-function mujocoQuatToText2Motion Aura(wxyz: number[]) {
+function mujocoQuatToText2MotionAura(wxyz: number[]) {
   const q = new THREE.Quaternion(wxyz[1], wxyz[2], wxyz[3], wxyz[0]).normalize()
   const r = new THREE.Matrix4().makeRotationFromQuaternion(q)
   const converted = MUJOCO_TO_TEXT2MOTION_AURA.clone().multiply(r).multiply(TEXT2MOTION_AURA_TO_MUJOCO)
@@ -106,7 +106,7 @@ async function loadMeshTransforms(base: string) {
       const [x, y, z] = parseVec(geom.getAttribute('pos'), 3)
       const [w, qx, qy, qz] = parseVec(geom.getAttribute('quat'), 4)
       const pos = new THREE.Vector3(x, y, z).applyMatrix4(MUJOCO_TO_TEXT2MOTION_AURA)
-      byFile.set(file, { pos, quat: mujocoQuatToText2Motion Aura([w, qx, qy, qz]) })
+      byFile.set(file, { pos, quat: mujocoQuatToText2MotionAura([w, qx, qy, qz]) })
     })
     return byFile
   })()
