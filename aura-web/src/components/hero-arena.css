@@ -1,0 +1,145 @@
+/* Hero arena (HeroArena.tsx): the scene is one WebGL canvas; DOM here is only the
+   accessible controls, screen-reader text and a load/fallback status. */
+/* Full-bleed first screen: edge to edge, no radius or border; the fixed nav floats over it. */
+.hero-arena {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100svh;
+  min-height: 560px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  isolation: isolate;
+  /* The arena is split down the middle: left half = Motion A, right half = Motion B.
+     Each half has its own scheme (data-tone-a / data-tone-b, set from the scene). */
+  --ha-bg-a: var(--fx-surface);
+  --ha-bg-b: var(--fx-surface);
+  background: linear-gradient(90deg, var(--ha-bg-a) 50%, var(--ha-bg-b) 50%);
+}
+.hero-arena[data-tone-a="dark"] { --ha-bg-a: var(--fx-navy, #3d405b); }
+.hero-arena[data-tone-b="dark"] { --ha-bg-b: var(--fx-navy, #3d405b); }
+.hero-arena[data-tone-a="feedback"] { --ha-bg-a: var(--fx-sunset, #f2cc8f); }
+.hero-arena[data-tone-b="feedback"] { --ha-bg-b: var(--fx-sunset, #f2cc8f); }
+
+/* Control colours. A follows the left half, B the right half; the centred
+   Pause / Tie / Skip group only changes when both halves share a scheme. */
+.hero-arena__controls {
+  --ha-btn-bg: color-mix(in srgb, var(--fx-cream) 82%, transparent);
+  --ha-btn-fg: var(--fx-ink);
+  --ha-btn-border: var(--fx-ink-10);
+  --ha-btn-hover-bg: var(--fx-ink);
+  --ha-btn-hover-fg: var(--fx-cream);
+}
+/* Dark: eggshell text on a deep-navy glass pill. */
+.hero-arena[data-tone-a="dark"] .hero-arena__btn--a,
+.hero-arena[data-tone-b="dark"] .hero-arena__btn--b,
+.hero-arena[data-tone-mid="dark"] .hero-arena__mid {
+  --ha-btn-bg: color-mix(in srgb, var(--fx-tone-800, #34374e) 80%, transparent);
+  --ha-btn-fg: var(--fx-eggshell, #f4f1de);
+  --ha-btn-border: var(--fx-cream-20, rgba(244, 241, 222, .2));
+  --ha-btn-hover-bg: var(--fx-eggshell, #f4f1de);
+  --ha-btn-hover-fg: var(--fx-navy, #3d405b);
+}
+/* Feedback: navy text (6.6:1 on sunset, 8.9:1 on the eggshell pill). */
+.hero-arena[data-tone-a="feedback"] .hero-arena__btn--a,
+.hero-arena[data-tone-b="feedback"] .hero-arena__btn--b,
+.hero-arena[data-tone-mid="feedback"] .hero-arena__mid {
+  --ha-btn-bg: color-mix(in srgb, var(--fx-eggshell, #f4f1de) 86%, transparent);
+  --ha-btn-fg: var(--fx-navy, #3d405b);
+  --ha-btn-border: var(--fx-ink-20, rgba(61, 64, 91, .2));
+  --ha-btn-hover-bg: var(--fx-navy, #3d405b);
+  --ha-btn-hover-fg: var(--fx-eggshell, #f4f1de);
+}
+.hero-arena__canvas { position: absolute; inset: 0; }
+/* The headline section was padded to clear the fixed nav; the hero now does that. */
+.hero-arena + .fx-hero { padding-top: 120px; }
+.hero-arena__canvas canvas { display: block; width: 100%; height: 100%; outline: none; }
+.hero-arena__sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.hero-arena__status {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 10px 16px; border-radius: var(--fx-r-pill, 1000px);
+  background: var(--fx-cream); color: var(--fx-ink-64);
+  font-family: var(--fx-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+  text-align: center; max-width: calc(100% - 32px);
+}
+.hero-arena__controls {
+  position: absolute; left: 16px; right: 16px; bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  pointer-events: none;
+}
+.hero-arena__mid { display: flex; gap: 6px; }
+.hero-arena__btn {
+  pointer-events: auto;
+  min-width: 44px; height: 36px; padding: 0 14px;
+  border: 1px solid var(--ha-btn-border); border-radius: var(--fx-r-pill, 1000px);
+  background: var(--ha-btn-bg);
+  color: var(--ha-btn-fg);
+  font-family: var(--fx-mono); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; line-height: 1;
+  cursor: pointer;
+  transition: background-color .35s var(--ha-ease), color .35s var(--ha-ease), border-color .35s var(--ha-ease), outline-color .35s var(--ha-ease);
+}
+.hero-arena__btn--side { width: 44px; height: 44px; padding: 0; font-size: 14px; font-weight: 600; }
+.hero-arena__btn:hover:not(:disabled) { background: var(--ha-btn-hover-bg); color: var(--ha-btn-hover-fg); }
+.hero-arena__btn:focus-visible { outline: 2px solid var(--ha-btn-fg); outline-offset: 2px; }
+.hero-arena__btn:disabled { opacity: .45; cursor: default; }
+.hero-arena--fallback { height: auto; min-height: 240px; display: grid; place-items: center; padding: 40px 24px; }
+.hero-arena__fallback { max-width: 460px; text-align: center; color: var(--fx-ink-64); }
+.hero-arena__fallback strong { display: block; color: var(--fx-ink); margin-bottom: 8px; }
+
+@media (max-width: 767px) {
+  .hero-arena { min-height: 480px; }
+  .hero-arena + .fx-hero { padding-top: 72px; }
+  .hero-arena__controls { left: 12px; right: 12px; bottom: 12px; }
+  .hero-arena__btn { padding: 0 10px; font-size: 11px; }
+}
+/* --------------------------------------------------------------------------
+   Fixed site nav over the hero. While the hero sits under the nav, HeroArena sets
+   html[data-hero-tone-a|b] and tags the burger with data-hero-side="a|b" (the half
+   it is over), so it follows its own half. The logo can straddle the centre: a
+   light copy (.fx-nav__logo-alt) is clipped to the dark half at --hero-logo-split.
+   The open menu (pills) keeps its normal look (:not(.is-open)).
+   -------------------------------------------------------------------------- */
+/* Menu pills keep their drop-in fade */
+html .fx-nav__pill { transition: color .35s var(--ha-ease), background-color .3s ease, box-shadow .3s ease, opacity .3s var(--fx-ease-nav), translate .3s var(--fx-ease-nav); }
+
+.fx-nav__logo { position: relative; }
+.fx-nav__logo .fx-nav__logo-alt {
+  position: absolute; left: 0; top: 0;
+  filter: brightness(0) invert(.95); /* eggshell-white logo for the navy half */
+  opacity: 0; pointer-events: none;
+  transition: opacity .35s var(--ha-ease);
+}
+html[data-hero-tone-a="dark"] .fx-nav:not(.is-open) .fx-nav__logo-alt {
+  opacity: 1; clip-path: inset(0 calc(100% - var(--hero-logo-split, 0px)) 0 0);
+}
+html[data-hero-tone-b="dark"] .fx-nav:not(.is-open) .fx-nav__logo-alt {
+  opacity: 1; clip-path: inset(0 0 0 var(--hero-logo-split, 0px));
+}
+html[data-hero-tone-a="dark"][data-hero-tone-b="dark"] .fx-nav:not(.is-open) .fx-nav__logo-alt { clip-path: none; }
+
+/* Dark half: eggshell lines on a navy glass burger. */
+.fx-nav:not(.is-open) .fx-nav__burger:is(html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]) {
+  background: rgba(52, 55, 78, .72); /* --fx-tone-800 */
+  box-shadow: 0 0 0 1px var(--fx-cream-10, rgba(244, 241, 222, .1));
+}
+.fx-nav:not(.is-open) .fx-nav__burger:is(html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]) .fx-nav__burger-line {
+  background: var(--fx-eggshell, #f4f1de);
+}
+.fx-nav:not(.is-open) .fx-nav__burger:focus-visible:is(html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]) {
+  outline-color: var(--fx-eggshell, #f4f1de);
+}
+/* Feedback half: navy lines (6.6:1 on sunset) on a warmer eggshell glass. */
+.fx-nav:not(.is-open) .fx-nav__burger:is(html[data-hero-tone-a="feedback"] [data-hero-side="a"], html[data-hero-tone-b="feedback"] [data-hero-side="b"]) {
+  background: rgba(244, 241, 222, .62);
+  box-shadow: 0 0 0 1px var(--fx-ink-10, rgba(61, 64, 91, .1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-arena__btn { transition: none; }
+  .fx-nav__logo .fx-nav__logo-alt { transition: none; }
+}

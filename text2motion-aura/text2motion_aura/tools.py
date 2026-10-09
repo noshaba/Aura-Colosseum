@@ -308,6 +308,8 @@ def seed_everything(seed: int, deterministic: bool = False) -> None:
     np.random.seed(seed)  # for NumPy.
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    if torch.backends.mps.is_available():
+        torch.mps.manual_seed(seed)
     if deterministic:
         torch.backends.cudnn.deterministic = True  # for deterministic behavior.
         torch.backends.cudnn.benchmark = False  # if you want to make the behavior deterministic.

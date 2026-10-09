@@ -1,0 +1,103 @@
+/* ==========================================================================
+   Typography + touches layer (loaded last, after design-tokens.css).
+   Studied from the type system of a robotics-institute site: one geometric
+   grotesk at body 400 / headings bold, tight -1px tracking at 1.1 leading,
+   12px uppercase captions with 1px tracking, a thick accent underline that
+   wipes in from the right on hover. Their face (TT Norms Pro) is commercial,
+   so Figtree (SIL OFL, Google Fonts) stands in. Overrides tokens only where
+   possible so the rest of the design layer keeps working unchanged.
+   Colour stays monochrome: every accent here is the design-tokens ink/tone
+   scale, never a hue of its own.
+   ========================================================================== */
+:root {
+  --fx-font: 'Figtree', Arial, sans-serif;
+
+  /* heading scale: fluid h1 40 -> 64px, 1.1 leading, -1px tracking */
+  --fx-h1: clamp(2.5rem, 1.857rem + 2.1429vw, 4rem);
+  --fx-h1-track: -1px;
+  --fx-head-weight: 600;
+  --fx-head-lh: 1.1;
+
+  /* caption role: 12px / uppercase / 1px tracking */
+  --fx-caption-size: 12px;
+  --fx-caption-track: 1px;
+
+  /* hover underline wipe: 0.4s, captured curve */
+  --fx-ease-underline: cubic-bezier(.23, .46, .4, 1);
+  --fx-underline-w: 3px;
+}
+
+/* 1. Body copy: regular weight, 1.5 leading */
+body { font-weight: 400; }
+.fx-app p { line-height: 1.5; }
+
+/* 2. Headings: bold weight, tight leading and tracking */
+.fx-app h1, .fx-app h2, .fx-app h3, .fx-app h4,
+.fx-h1, .fx-h2 {
+  font-weight: var(--fx-head-weight);
+  line-height: var(--fx-head-lh);
+}
+.fx-app h1, .fx-app h2, .fx-h1, .fx-h2 { letter-spacing: var(--fx-h1-track); }
+.fx-app h4 { line-height: 1.2; }
+
+/* 3. Caption role */
+.fx-tag, .study-label, .card-kicker {
+  font-size: var(--fx-caption-size);
+  letter-spacing: var(--fx-caption-track);
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+.fx-tag { line-height: 1; }
+
+/* 4. Links: thick ink underline wiping in from the right (nav hover stays the tonal shift) */
+.fx-link::after {
+  height: var(--fx-underline-w);
+  bottom: -6px;
+  background: var(--fx-accent);
+}
+
+/* 5. Tabular figures for metrics */
+.fx-learning__count, .fx-app strong { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-link::after { transition: none; }
+}
+
+/* --------------------------------------------------------------------------
+   6. Frosted nav pill: translucent fill + 20px backdrop blur; firmer fill and
+   a soft shadow once the page has scrolled. Solid fill where unsupported.
+   -------------------------------------------------------------------------- */
+.fx-nav__pill:not(.fx-nav__cta) {
+  background: rgba(236, 228, 215, .66); /* --fx-tone-100 */
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
+  box-shadow: 0 0 0 1px var(--fx-ink-5);
+  transition: background-color .3s ease, box-shadow .3s ease;
+}
+.fx-nav__pill {
+  transition: background-color .3s ease, box-shadow .3s ease, color .2s var(--fx-ease-nav),
+    opacity .3s var(--fx-ease-nav), translate .3s var(--fx-ease-nav);
+}
+.fx-nav.is-scrolled .fx-nav__pill:not(.fx-nav__cta) {
+  background: rgba(236, 228, 215, .86);
+  box-shadow: 0 0 0 1px var(--fx-ink-5), 0 8px 24px -12px var(--fx-ink-20);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .fx-nav__pill:not(.fx-nav__cta), .fx-nav.is-scrolled .fx-nav__pill:not(.fx-nav__cta) { background: var(--fx-surface-nav); }
+}
+
+/* --------------------------------------------------------------------------
+   7. Scroll reveal (hooks/useScrollReveal.ts): fade in + rise 30px, 1.25s,
+   captured curve. Hidden state exists only on the JS-added .fx-reveal class.
+   -------------------------------------------------------------------------- */
+.fx-reveal {
+  opacity: 0;
+  translate: 0 30px;
+  transition: opacity 1.25s var(--fx-ease-underline), translate 1.25s var(--fx-ease-underline);
+}
+.fx-reveal.is-revealed { opacity: 1; translate: 0 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-nav__pill { transition: none; }
+  .fx-reveal, .fx-reveal.is-revealed { opacity: 1; translate: none; transition: none; }
+}

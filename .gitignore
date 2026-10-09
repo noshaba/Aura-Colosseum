@@ -8,3 +8,12 @@ __pycache__/
 aura-web/node_modules/
 aura-web/dist/
 .env
+
+# Editor / OS / build caches
+.DS_Store
+.vscode/
+*.tsbuildinfo
+
+# Claude Code agents/skills (kept local)
+.claude/
+skills-lock.json

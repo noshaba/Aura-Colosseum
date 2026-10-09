@@ -1,30 +1,39 @@
-import { StudyHeader } from './StudyHeader'
 import { GeneratedMotionLibrary } from './GeneratedMotionLibrary'
 import { JudgeDemoLab } from './JudgeDemoLab'
 import { AuraGeneratorStage } from './AuraGeneratorStage'
+import { Marquee, PIPELINE_ITEMS } from './Marquee'
+import { MotionCta } from './MotionCta'
+import { HeroArena } from './HeroArena'
 
 export function MotionStudio() {
   const judgeQuery = new URLSearchParams(window.location.search).get('judge')
   const judgeMode = judgeQuery === '1' || (judgeQuery !== '0' && import.meta.env.VITE_AURA_JUDGE_MODE === 'true')
   if (judgeMode) return (
-    <main className="studio-shell">
-      <div className="studio-heading"><StudyHeader />
-        <div className="studio-heading-grid"><div><div className="eyebrow">AURA / JUDGE MODE</div><h1>Human-guided robot data.<br /><em>Try it without a GPU.</em></h1></div><p>This static mode lets judges inspect motions, collect comparisons, and train Aura's small preference model in-browser. Live mode adds Text2Motion Aura generation, constraint screening, downstream experiments, and Solana curation payouts.</p></div>
-      </div>
+    <main className="fx-page">
+      <HeroArena />
+      <section className="fx-hero">
+        <h1 className="fx-h1">Human-guided robot data.<br />Try it without a GPU.</h1>
+        <p className="fx-hero__lede">This static mode lets judges inspect motions, collect comparisons, and train Aura's small preference model in-browser. Live mode adds Text2Motion Aura generation, constraint screening, downstream experiments, and Solana curation payouts.</p>
+      </section>
       <JudgeDemoLab />
-      <section className="judge-architecture"><div><strong>LIVE PIPELINE</strong><span>Text2Motion Aura generation</span><b>→</b><span>Native constraints</span><b>→</b><span>Human preferences</span><b>→</b><span>Learned ranking</span><b>→</b><span>Downstream benchmark</span><b>→</b><span>SOL curation rewards</span></div><p>Judge Mode uses NVIDIA Text2Motion Aura's bundled G1 examples solely to make the interface accessible without model weights or CUDA. Submission claims should use your separately collected same-prompt experiment, not these samples.</p></section>
+      <MotionCta judge />
     </main>
   )
   return (
-    <main className="studio-shell">
-      <div className="studio-heading"><StudyHeader />
-        <div className="studio-heading-grid">
-          <div><div className="eyebrow">AURA / GENERATIVE MOVEMENT RESEARCH</div><h1>Make movement.<br /><em>Measure possibility.</em></h1></div>
-          <p>Generate Unitree G1 motion from text, play each result immediately, compare candidates, screen task constraints, and learn from human preference—all inside one Aura workspace.</p>
-        </div>
+    <main className="fx-page">
+      <HeroArena />
+      <section className="fx-hero">
+        <h1 className="fx-h1">Make movement.<br />Measure possibility.</h1>
+        <p className="fx-hero__lede">Generate Unitree G1 motion from text, play each result immediately, compare candidates, screen task constraints, and learn from human preference—all inside one Aura workspace.</p>
+      </section>
+      <div className="fx-hero__asset">
+        <AuraGeneratorStage />
       </div>
-      <AuraGeneratorStage />
-      <GeneratedMotionLibrary />
+      <Marquee label="Physical AI selection study / 001" items={PIPELINE_ITEMS} />
+      <div className="fx-section">
+        <GeneratedMotionLibrary />
+      </div>
+      <MotionCta />
     </main>
   )
 }

@@ -65,6 +65,20 @@ def list_examples() -> list[dict[str, Any]]:
     return out
 
 
+def _pick_device() -> tuple[str | None, str | None]:
+    """Return (torch device, display name). AURA_DEVICE overrides auto-detection."""
+    import torch
+    forced = os.environ.get("AURA_DEVICE", "").strip().lower()
+    if forced == "cpu":
+        return "cpu", "CPU"
+    if forced in ("", "auto", "cuda") and torch.cuda.is_available():
+        return "cuda:0", torch.cuda.get_device_name(0)
+    # Apple Silicon: set PYTORCH_ENABLE_MPS_FALLBACK=1 so ops MPS lacks run on CPU instead of crashing.
+    if forced in ("", "auto", "mps") and torch.backends.mps.is_available():
+        return "mps", "Apple Silicon (MPS)"
+    return None, None
+
+
 class AuraText2MotionGenerator:
     def __init__(self, library_dir: Path):
         self.library_dir = Path(library_dir)
@@ -77,15 +91,14 @@ class AuraText2MotionGenerator:
         self._last_error: str | None = None
 
     def status(self) -> dict[str, Any]:
-        cuda_available = False
-        cuda_name = None
+        device = device_name = None
         try:
-            import torch
-            cuda_available = bool(torch.cuda.is_available())
-            if cuda_available:
-                cuda_name = torch.cuda.get_device_name(0)
+            device, device_name = _pick_device()
         except Exception:
             pass
+        # The frontend keys "engine ready" off cuda_available, so it means "any accelerator" here.
+        cuda_available = device is not None
+        cuda_name = device_name
         return {
             "model": "text2motion-aura-g1",
             "model_loaded": self._model is not None,
@@ -103,12 +116,13 @@ class AuraText2MotionGenerator:
         import torch
         from text2motion_aura import load_model
 
-        if not torch.cuda.is_available():
+        device, _ = _pick_device()
+        if device is None:
             raise RuntimeError(
-                "CUDA is unavailable to the Aura generator. Run the server from the working Text2Motion Aura environment "
-                "with a CUDA-enabled PyTorch build."
+                "No CUDA or MPS device is available to the Aura generator. Use a CUDA-enabled PyTorch build, "
+                "an Apple Silicon Mac, or set AURA_DEVICE=cpu."
             )
-        self._device = "cuda:0"
+        self._device = device
         # The separate CPU text-encoder server is selected through TEXT_ENCODER_MODE=api.
         from text2motion_aura.model.registry import MODEL_INFOS
         resolved_request = MODEL_NAME

@@ -1,0 +1,69 @@
+{
+  "format": "aura-hero-arena-v1",
+  "clips": [
+    {
+      "id": "01-single-text-prompt",
+      "label": "Stumble recovery",
+      "prompt": "A person walking forward quickly stumbles but maintains their balance",
+      "frames": 150,
+      "fps": 30,
+      "file": "01-single-text-prompt.g1.json"
+    },
+    {
+      "id": "02-multi-text-ee-constraint",
+      "label": "Carry and set down",
+      "prompt": "A person walks forward while carrying a box / A person sets a box down onto the ground",
+      "frames": 228,
+      "fps": 30,
+      "file": "02-multi-text-ee-constraint.g1.json"
+    },
+    {
+      "id": "03-full-body-keyframes",
+      "label": "Walk and pick up",
+      "prompt": "A person walking forward picks up something off the ground",
+      "frames": 150,
+      "fps": 30,
+      "file": "03-full-body-keyframes.g1.json"
+    },
+    {
+      "id": "04-ee-constraint",
+      "label": "Diagonal walk and wave",
+      "prompt": "A person walks diagonally to the left and waves at someone on their right",
+      "frames": 149,
+      "fps": 30,
+      "file": "04-ee-constraint.g1.json"
+    },
+    {
+      "id": "05-root-path",
+      "label": "Jog in an arc",
+      "prompt": "Initially standing still and calm, the person then starts jogging in a counterclockwise arc.",
+      "frames": 181,
+      "fps": 30,
+      "file": "05-root-path.g1.json"
+    },
+    {
+      "id": "06-root-waypoints",
+      "label": "Walk with object",
+      "prompt": "A person is walking while carrying a small object in their left hand",
+      "frames": 241,
+      "fps": 30,
+      "file": "06-root-waypoints.g1.json"
+    },
+    {
+      "id": "07-text-terrain",
+      "label": "Climb stairs",
+      "prompt": "A person begins walking up the stairs",
+      "frames": 105,
+      "fps": 30,
+      "file": "07-text-terrain.g1.json"
+    },
+    {
+      "id": "08-text-object",
+      "label": "Low-to-high place",
+      "prompt": "A person picks up an object from low on their left side and places it up high",
+      "frames": 151,
+      "fps": 30,
+      "file": "08-text-object.g1.json"
+    }
+  ]
+}
