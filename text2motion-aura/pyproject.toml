@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "text2motion-aura"
 version = "1.0.0"
-description = "Text2Motion Aura motion generation engine"
+description = "NVIDIA Kimodo · Aura integration motion generation engine"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "Apache-2.0"}

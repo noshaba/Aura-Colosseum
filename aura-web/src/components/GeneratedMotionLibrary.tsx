@@ -26,6 +26,7 @@ type Motion = {
 }
 type Review = { score: number; note: string; reviewed_at: string }
 type PriorState = { model: null | { version: string; caveat: string }; scores: { id: string; prior_score: number }[] }
+type RewardState = { model: null | { version: string; total_comparison_count: number; motion_count: number; caveat: string }; scores: { id: string; reward: number; rank: number; rank_percentile: number }[] }
 const STORAGE = 'aura-generated-motion-reviews-v1'
 const CHAIN_STORAGE = 'aura-g1-screen-receipts-v1'
 function stored<T>(key: string, fallback: T): T {
@@ -54,6 +55,7 @@ export function GeneratedMotionLibrary() {
   const [aistProgress, setAistProgress] = useState(0)
   const [aistView, setAistView] = useState<ViewPose>({ ...DEFAULT_VIEW_POSE })
   const [prior, setPrior] = useState<PriorState>({ model: null, scores: [] })
+  const [reward, setReward] = useState<RewardState>({ model: null, scores: [] })
   const newestMotionRef = useRef<string | null>(null)
   const libraryInitializedRef = useRef(false)
   const refresh = async () => {
@@ -86,9 +88,13 @@ export function GeneratedMotionLibrary() {
         return items.some(x => x.id === previous) ? previous : (newest || starterDefault)
       })
       try {
-        const priorResponse = await fetch('/aura-api/prior', { cache: 'no-store' })
+        const [priorResponse, rewardResponse] = await Promise.all([
+          fetch('/aura-api/prior', { cache: 'no-store' }),
+          fetch('/aura-api/reward', { cache: 'no-store' }),
+        ])
         if (priorResponse.ok) setPrior(await priorResponse.json() as PriorState)
-      } catch { /* learned prior is optional */ }
+        if (rewardResponse.ok) setReward(await rewardResponse.json() as RewardState)
+      } catch { /* learned models are optional until enough preference data exists */ }
       setError('')
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not connect to the motion library.') }
   }
@@ -134,6 +140,7 @@ export function GeneratedMotionLibrary() {
     finally { setBusy(false) }
   }
   const priorScore = (id: string) => prior.scores.find(item => item.id === id)?.prior_score
+  const rewardScore = (id: string) => reward.scores.find(item => item.id === id)
   const fields: { key: keyof Report; label: string; unit?: string; detail: string }[] = [
     { key: 'near_floor_toe_speed_m_s', label: 'Near-floor toe speed', unit: ' m/s', detail: 'Lower may indicate less apparent sliding; contact is height-estimated.' },
     { key: 'estimated_below_floor_fraction', label: 'Below-estimated-floor fraction', detail: 'Diagnostic only: floor is inferred from the motion, not a collision model.' },
@@ -149,9 +156,9 @@ export function GeneratedMotionLibrary() {
         <div className="generated-library-group-label"><span>PRELOADED AIST++</span><small>{AIST_REFERENCE_MOTIONS.length} references</small></div>
         {AIST_REFERENCE_MOTIONS.map(m => { const key = `aist:${m.id}`; return <button key={key} className={key === selected ? 'generated-motion selected starter' : 'generated-motion starter'} onClick={() => { setSelected(key); setAistProgress(0); setAistView({ ...DEFAULT_VIEW_POSE }) }}><strong>{m.label}</strong><small>AIST++ · retargeted to G1 · {STUDY_CLIP_SECONDS}s clip</small><span>Reference motion · click to play</span></button> })}
         <div className="generated-library-group-label aura-generations"><span>AURA GENERATIONS</span><small>{motions.length} saved</small></div>
-        {motions.length ? motions.map(m => <button key={m.id} className={m.id === selected ? 'generated-motion selected' : 'generated-motion'} onClick={() => { setSelected(m.id); setScore(reviews[m.id]?.score || 3); setNote(reviews[m.id]?.note || ''); window.dispatchEvent(new CustomEvent('aura:select-motion', { detail: { id: m.id } })) }}><strong>{m.name}</strong><small>{m.model} · {m.frames} frames · {new Date(m.created_at).toLocaleString()}</small><span>{priorScore(m.id) !== undefined ? `Learned prior ${priorScore(m.id)!.toFixed(2)} · ` : ''}{m.kinematic_evaluation ? '✓ G1 screening ready' : m.evaluation_error ? 'Evaluation unavailable' : 'Saved motion · click to play'}</span></button>) : <p>No Aura generations yet. You can still explore the AIST++ references above.</p>}
+        {motions.length ? motions.map(m => <button key={m.id} className={m.id === selected ? 'generated-motion selected' : 'generated-motion'} onClick={() => { setSelected(m.id); setScore(reviews[m.id]?.score || 3); setNote(reviews[m.id]?.note || ''); window.dispatchEvent(new CustomEvent('aura:select-motion', { detail: { id: m.id } })) }}><strong>{m.name}</strong><small>{m.model} · {m.frames} frames · {new Date(m.created_at).toLocaleString()}</small><span>{rewardScore(m.id) ? `Aura #${rewardScore(m.id)!.rank} · reward ${rewardScore(m.id)!.reward.toFixed(2)} · ` : priorScore(m.id) !== undefined ? `Learned prior ${priorScore(m.id)!.toFixed(2)} · ` : ''}{m.kinematic_evaluation ? '✓ G1 screening ready' : m.evaluation_error ? 'Evaluation unavailable' : 'Saved motion · click to play'}</span></button>) : <p>No Aura generations yet. You can still explore the AIST++ references above.</p>}
       </aside><div className="generated-library-detail">
-        {currentAist ? <div className="aist-library-detail"><div className="generated-library-detail-title"><strong>{currentAist.label}</strong><span>AIST++ reference · retargeted to G1</span></div><div className="aist-library-player"><XBotScene embodiment="g1" side="A" quality="reference" motionFile={currentAist.file} motionUrl={currentAist.url} degradationSeed={currentAist.seed} startOffsetSeconds={currentAist.startOffsetSeconds} paused={false} playhead={aistProgress} autoRotate showTrails showLandmarks={false} resetViewSignal={0} viewPose={aistView} onViewPoseChange={setAistView} /></div><div className="aist-library-meta"><span>Preloaded onboarding/reference motion</span><span>{STUDY_CLIP_SECONDS}s looping excerpt</span><span>Does not enter Aura's generated-motion training set</span></div><p className="generated-library-disclaimer">This is an AIST++ reference clip retargeted to the G1 viewer so visitors can browse motion immediately. Generate an Aura batch above to create same-prompt candidates for preference learning.</p></div> : current ? <><div className="generated-library-detail-title"><strong>{current.name}</strong><span>{priorScore(current.id) !== undefined ? `AMP-inspired prior ${priorScore(current.id)!.toFixed(2)}` : 'Learned prior not trained yet'}</span><a href={`/aura-api/files/${encodeURIComponent(current.native_file)}`} download>Native NPZ ↗</a></div>
+        {currentAist ? <div className="aist-library-detail"><div className="generated-library-detail-title"><strong>{currentAist.label}</strong><span>AIST++ reference · retargeted to G1</span></div><div className="aist-library-player"><XBotScene embodiment="g1" side="A" quality="reference" motionFile={currentAist.file} motionUrl={currentAist.url} degradationSeed={currentAist.seed} startOffsetSeconds={currentAist.startOffsetSeconds} paused={false} playhead={aistProgress} autoRotate showTrails showLandmarks={false} resetViewSignal={0} viewPose={aistView} onViewPoseChange={setAistView} /></div><div className="aist-library-meta"><span>Preloaded onboarding/reference motion</span><span>{STUDY_CLIP_SECONDS}s looping excerpt</span><span>Does not enter Aura's generated-motion training set</span></div><p className="generated-library-disclaimer">This is an AIST++ reference clip retargeted to the G1 viewer so visitors can browse motion immediately. Generate an Aura batch above to create same-prompt candidates for preference learning.</p></div> : current ? <><div className="generated-library-detail-title"><strong>{current.name}</strong><span>{rewardScore(current.id) ? `Aura reward ${rewardScore(current.id)!.reward.toFixed(3)} · rank #${rewardScore(current.id)!.rank}` : priorScore(current.id) !== undefined ? `AMP-inspired prior ${priorScore(current.id)!.toFixed(2)}` : 'Aura reward model not trained yet'}</span><a href={`/aura-api/files/${encodeURIComponent(current.native_file)}`} download>Native NPZ ↗</a></div>
           {current.preview_file ? <div className={other?.preview_file?.endsWith('.g1.json') ? 'generated-playback-grid comparing' : 'generated-playback-grid'}>
             <div className="generated-playback-card"><div className="generated-playback-label"><span>SELECTED / A</span><strong>{current.name}</strong></div>{current.preview_file.endsWith('.g1.json') ? <GeneratedG1RobotPreview key={current.id} file={`/aura-api/files/${encodeURIComponent(current.preview_file)}`} /> : <GeneratedMotionPreview file={`/aura-api/files/${encodeURIComponent(current.preview_file)}`} />}</div>
             {other?.preview_file?.endsWith('.g1.json') && <div className="generated-playback-card"><div className="generated-playback-label"><span>COMPARISON / B</span><strong>{other.name}</strong></div><GeneratedG1RobotPreview key={other.id} file={`/aura-api/files/${encodeURIComponent(other.preview_file)}`} compact /></div>}
@@ -164,7 +171,7 @@ export function GeneratedMotionLibrary() {
             {matchingReceipts.length > 0 && <p className="g1-chain-success">✓ Wallet-signed memo confirmed · <a href={explorerTransactionUrl(matchingReceipts[matchingReceipts.length - 1].signature)} target="_blank" rel="noreferrer">View devnet transaction ↗</a></p>}
             {chainError && <p className="generated-library-warning">{chainError}</p>}
           </div> : <p className="generated-library-warning">{current.evaluation_error || 'Automatic G1 screening is available for G1 NPZ motions only.'}</p>}
-          <div className="g1-compare"><h3>Compare two generated motions</h3><p className="g1-compare-note">Choose a second Text2Motion Aura generation to play both G1 motions side by side. New generations automatically become motion A and start playing when Text2Motion Aura finishes.</p><label htmlFor="compare-motion">Second motion</label><select id="compare-motion" value={other?.id || ''} onChange={e => setCompare(e.target.value)}><option value="">Choose a second G1 motion</option>{motions.filter(m => m.id !== current.id && m.kinematic_evaluation).map(m => <option key={m.id} value={m.id}>{m.name} · {m.id}</option>)}</select>
+          <div className="g1-compare"><h3>Compare two generated motions</h3><p className="g1-compare-note">Choose a second NVIDIA Kimodo generation to play both G1 motions side by side. New generations automatically become motion A and start playing when Kimodo finishes.</p><label htmlFor="compare-motion">Second motion</label><select id="compare-motion" value={other?.id || ''} onChange={e => setCompare(e.target.value)}><option value="">Choose a second G1 motion</option>{motions.filter(m => m.id !== current.id && m.kinematic_evaluation).map(m => <option key={m.id} value={m.id}>{m.name} · {m.id}</option>)}</select>
             {result && other?.kinematic_evaluation && <table><thead><tr><th>Measure</th><th>Selected</th><th>Comparison</th></tr></thead><tbody>{fields.map(f => <tr key={f.key}><td>{f.label}</td><td>{metric(result.report[f.key] as number | null, f.unit)}</td><td>{metric(other.kinematic_evaluation!.report[f.key] as number | null, f.unit)}</td></tr>)}</tbody></table>}
             <small>Measurements are descriptive: different tasks and desired motion trajectories require different criteria.</small>
           </div>

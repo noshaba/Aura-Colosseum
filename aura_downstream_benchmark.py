@@ -38,7 +38,7 @@ class MotionSequence:
     motion_id: str
     name: str
     fps: float
-    positions: np.ndarray  # (T, 34, 3), Text2Motion Aura Y-up / Z-forward
+    positions: np.ndarray  # (T, 34, 3), NVIDIA Kimodo · Aura integration Y-up / Z-forward
     native_sha256: str
 
 

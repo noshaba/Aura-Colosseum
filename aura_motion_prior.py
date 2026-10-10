@@ -19,7 +19,7 @@ from typing import Any
 import numpy as np
 
 from aura_g1_metrics import canonical_bytes, sha256
-from aura_preference import get_motion, list_preferences
+from aura_preference import get_motion, validated_preferences
 
 VERSION = "aura-amp-inspired-prior-v1"
 MODEL_BASENAME = "aura-motion-prior-v1"
@@ -104,12 +104,15 @@ def _forward(x, w1, b1, w2, b2, w3, b3):
 
 
 def train_prior(conn, base: Path, epochs: int = 260):
-    prefs = list(reversed(list_preferences(conn)))
+    prefs, diagnostics = validated_preferences(conn, base)
     if len(prefs) < 6:
-        raise ValueError("Collect at least six generated-motion comparisons before training the motion prior")
+        raise ValueError(
+            f"Aura has {len(prefs)} valid unique comparisons of 6 required for the motion prior "
+            f"({diagnostics['duplicate_comparison_count']} duplicates excluded)"
+        )
     targets = _labels(prefs)
-    if len(targets) < 4:
-        raise ValueError("The motion prior needs preferences covering at least four distinct generated motions")
+    if diagnostics["unique_motion_count"] < 4:
+        raise ValueError("The motion prior needs preferences covering at least four distinct generated motion hashes")
 
     windows: dict[str, np.ndarray] = {}
     usable_ids = []
@@ -197,6 +200,8 @@ def train_prior(conn, base: Path, epochs: int = 260):
         "kind": "AMP-inspired trajectory-window discriminator",
         "trained_at": int(time.time()),
         "vote_count": len(prefs),
+        "stored_vote_count": diagnostics["stored_comparison_count"],
+        "duplicate_vote_count": diagnostics["duplicate_comparison_count"],
         "motion_count": len(usable_ids),
         "training_motion_ids": train_ids,
         "validation_motion_ids": val_ids,

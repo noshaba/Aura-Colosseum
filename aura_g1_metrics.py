@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import numpy as np
 
-# Matches Text2Motion Aura G1Skeleton34.bone_order_names_with_parents (see text2motion-aura/text2motion_aura/skeleton/definitions.py).
+# Matches NVIDIA Kimodo · Aura integration G1Skeleton34.bone_order_names_with_parents (see text2motion-aura/text2motion_aura/skeleton/definitions.py).
 FEET = {'left': (6, 7), 'right': (13, 14)}  # ankle roll and toe endpoint
 REPORT_VERSION = 'g1-kinematic-screen-v1'
 

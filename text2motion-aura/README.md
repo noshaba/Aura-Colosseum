@@ -1,6 +1,6 @@
-# Text2Motion Aura
+# NVIDIA Kimodo · Aura integration
 
-Text2Motion Aura is Aura's local text-to-G1 motion generation engine.
+NVIDIA Kimodo · Aura integration is Aura's local text-to-G1 motion generation engine.
 
 This directory is a renamed integration/fork layer around vendored NVIDIA generation code. Original licensing and attribution are preserved in `LICENSE`, `ATTRIBUTIONS.MD`, `UPSTREAM_SOURCE_README.md`, and the repository root `THIRD_PARTY.md`.
 

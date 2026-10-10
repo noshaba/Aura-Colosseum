@@ -846,7 +846,7 @@ def create_gui(
                         new_key = kimodo_short_key_for_skeleton_dataset(target_skel, "RP")
                     if new_key is None:
                         raise ValueError(
-                            f"No Text2Motion Aura model found for skeleton {target_skel} (motion has J={num_joints_motion})."
+                            f"No NVIDIA Kimodo · Aura integration model found for skeleton {target_skel} (motion has J={num_joints_motion})."
                         )
                     if new_key != session.model_name:
                         gui_model_selector.set_from_short_key(new_key)

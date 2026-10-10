@@ -14,6 +14,8 @@ type Props = {
 
 const nav: { id: Page; label: string }[] = [
   { id: 'studio', label: 'Motion studio' },
+  { id: 'model', label: 'Aura model' },
+  { id: 'curation', label: 'Curation' },
   { id: 'methodology', label: 'Methodology' },
 ]
 

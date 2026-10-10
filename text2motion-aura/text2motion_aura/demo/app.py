@@ -77,7 +77,7 @@ class Demo:
         self.server = viser.ViserServer(
             host=SERVER_NAME,
             port=SERVER_PORT,
-            label="Aura · Text2Motion Aura",
+            label="Aura · NVIDIA Kimodo · Aura integration",
             enable_camera_keyboard_controls=False,  # don't move the camera with the arrow keys
         )
         self.server.scene.world_axes.visible = False  # used for debugging

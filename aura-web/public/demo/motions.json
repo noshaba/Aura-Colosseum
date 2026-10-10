@@ -1,6 +1,6 @@
 {
   "version": "aura-judge-demo-v1",
-  "caveat": "Bundled Text2Motion Aura examples are for interface demonstration only. They are not same-prompt experimental evidence and must not be cited as Aura benchmark results.",
+  "caveat": "Bundled NVIDIA Kimodo examples are for interface demonstration only. They are not same-prompt experimental evidence and must not be cited as Aura benchmark results.",
   "motions": [
     {
       "id": "sample_01_single_text_prompt",
@@ -34,7 +34,7 @@
         "root_height_range_m": 0.1487,
         "duration_s": 4.967
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_02_multi_text_ee_constraint",
@@ -68,7 +68,7 @@
         "root_height_range_m": 0.4663,
         "duration_s": 4.049
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_03_full_body_keyframes",
@@ -102,7 +102,7 @@
         "root_height_range_m": 0.209,
         "duration_s": 4.967
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_04_ee_constraint",
@@ -136,7 +136,7 @@
         "root_height_range_m": 0.0555,
         "duration_s": 4.933
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_05_root_path",
@@ -170,7 +170,7 @@
         "root_height_range_m": 0.0651,
         "duration_s": 6.0
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_06_root_waypoints",
@@ -204,7 +204,7 @@
         "root_height_range_m": 0.0385,
         "duration_s": 8.0
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_07_text_terrain",
@@ -238,7 +238,7 @@
         "root_height_range_m": 1.1659,
         "duration_s": 3.467
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     },
     {
       "id": "sample_08_text_object",
@@ -272,7 +272,7 @@
         "root_height_range_m": 0.2929,
         "duration_s": 5.0
       },
-      "source": "Text2Motion Aura bundled G1 example; software demonstration only"
+      "source": "NVIDIA Kimodo bundled G1 example; software demonstration only"
     }
   ]
 }

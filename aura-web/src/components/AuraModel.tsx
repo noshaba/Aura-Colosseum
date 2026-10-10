@@ -1,0 +1,338 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import './aura-model.css'
+
+type RewardMeta = {
+  version?: string
+  kind?: string
+  training_paradigm?: string
+  trained_at?: number
+  training_count?: number
+  total_comparison_count?: number
+  stored_comparison_count?: number
+  unique_pair_count?: number
+  duplicate_comparison_count?: number
+  rejected_comparison_count?: number
+  motion_count?: number
+  parameter_count?: number
+  sequence_length?: number
+  input_dim?: number
+  architecture?: { d_model?: number; heads?: number; layers?: number; feedforward?: number }
+  train_pair_accuracy?: number | null
+  train_pair_log_loss?: number | null
+  heldout_pair_accuracy?: number | null
+  heldout_pair_log_loss?: number | null
+  heldout_pair_count?: number
+  dataset_sha256?: string
+  model_sha256?: string
+  feature_method?: string
+  caveat?: string
+}
+
+type RewardScore = {
+  id: string
+  name?: string
+  reward: number
+  rank: number
+  rank_percentile?: number
+}
+
+type RewardState = {
+  model: RewardMeta | null
+  scores: RewardScore[]
+  error?: string
+}
+
+type TrainingDiagnostics = {
+  stored_comparison_count: number
+  valid_comparison_count: number
+  unique_pair_count: number
+  unique_motion_count: number
+  duplicate_comparison_count: number
+  rejected_comparison_count: number
+  rejection_reasons?: Record<string, number>
+  reward_min_comparisons: number
+  reward_min_motions: number
+  reward_trainable: boolean
+}
+
+type LayerId = 'trajectory' | 'features' | 'projection' | 'position' | 'transformer' | 'pool' | 'head' | 'reward'
+
+type Layer = {
+  id: LayerId
+  eyebrow: string
+  title: string
+  shape: string
+  description: string
+  detail: string
+  learnable: boolean
+}
+
+const compact = (n?: number | null) => {
+  if (n == null || !Number.isFinite(n)) return '—'
+  return new Intl.NumberFormat('en', { notation: n >= 10_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(n)
+}
+
+const pct = (n?: number | null) => n == null ? 'Withheld' : `${(n * 100).toFixed(1)}%`
+const shortHash = (value?: string) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : '—'
+
+export function AuraModel() {
+  const [reward, setReward] = useState<RewardState>({ model: null, scores: [] })
+  const [loading, setLoading] = useState(true)
+  const [diagnostics, setDiagnostics] = useState<TrainingDiagnostics | null>(null)
+  const [training, setTraining] = useState(false)
+  const [message, setMessage] = useState('')
+  const [active, setActive] = useState<LayerId>('transformer')
+  const [playing, setPlaying] = useState(false)
+  const timer = useRef<number | null>(null)
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [rewardResponse, diagnosticsResponse] = await Promise.all([
+        fetch('/aura-api/reward', { cache: 'no-store' }),
+        fetch('/aura-api/preferences/diagnostics', { cache: 'no-store' }),
+      ])
+      if (!rewardResponse.ok) throw new Error(`Aura API returned ${rewardResponse.status}`)
+      const data = await rewardResponse.json() as RewardState
+      setReward({ model: data.model ?? null, scores: Array.isArray(data.scores) ? data.scores : [], error: data.error })
+      if (diagnosticsResponse.ok) setDiagnostics(await diagnosticsResponse.json() as TrainingDiagnostics)
+    } catch (error) {
+      setReward({ model: null, scores: [], error: error instanceof Error ? error.message : 'Aura API unavailable' })
+      setDiagnostics(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    const id = window.setInterval(() => { if (!training) void refresh() }, 15000)
+    return () => window.clearInterval(id)
+  }, [refresh, training])
+  useEffect(() => () => { if (timer.current != null) window.clearTimeout(timer.current) }, [])
+
+  const meta = reward.model
+  const dims = {
+    seq: meta?.sequence_length ?? 64,
+    input: meta?.input_dim ?? 413,
+    model: meta?.architecture?.d_model ?? 96,
+    heads: meta?.architecture?.heads ?? 4,
+    blocks: meta?.architecture?.layers ?? 2,
+    ff: meta?.architecture?.feedforward ?? 192,
+  }
+
+  const layers = useMemo<Layer[]>(() => [
+    {
+      id: 'trajectory', eyebrow: '01 · Robot trajectory', title: 'G1 motion', shape: 'T × 34 × 3', learnable: false,
+      description: 'The model starts from the saved robot-native Unitree G1 trajectory, not from Aura’s handcrafted quality metrics.',
+      detail: 'Each motion contains 34 world-space G1 joint positions over time, with global joint rotations when the generated file provides them.'
+    },
+    {
+      id: 'features', eyebrow: '02 · Motion representation', title: 'Trajectory features', shape: `${dims.seq} × ${dims.input}`, learnable: false,
+      description: 'Aura converts every trajectory into a fixed-length sequence of pose and dynamics features.',
+      detail: 'Per frame: root-relative joint positions, joint velocities, root velocity, root height, 6D global rotations, and a rotation-presence bit. The sequence is resampled to 64 frames and normalized from the training set.'
+    },
+    {
+      id: 'projection', eyebrow: '03 · Learned embedding', title: 'Input projection', shape: `${dims.input} → ${dims.model}`, learnable: true,
+      description: 'A learned linear projection compresses each high-dimensional motion frame into Aura’s latent motion space.',
+      detail: `Linear(${dims.input}, ${dims.model}) → LayerNorm → GELU. This is the first learned layer and maps heterogeneous trajectory channels into a shared ${dims.model}-dimensional representation.`
+    },
+    {
+      id: 'position', eyebrow: '04 · Time identity', title: 'Positional embedding', shape: `${dims.seq} × ${dims.model}`, learnable: true,
+      description: 'Learned positional embeddings tell Aura where each frame occurs in the motion.',
+      detail: 'The same pose can mean something different at take-off, mid-motion, or landing. A learned temporal embedding is added before attention.'
+    },
+    {
+      id: 'transformer', eyebrow: '05 · Temporal reasoning', title: `Transformer ×${dims.blocks}`, shape: `${dims.heads} heads · FF ${dims.ff}`, learnable: true,
+      description: 'Self-attention lets every frame compare itself with the rest of the trajectory, learning whole-motion coordination and timing.',
+      detail: `${dims.blocks} Transformer encoder blocks use ${dims.heads}-head self-attention with a ${dims.ff}-unit feed-forward network. This is where Aura can learn temporal patterns that simple foot-slide or displacement metrics cannot express.`
+    },
+    {
+      id: 'pool', eyebrow: '06 · Motion summary', title: 'Temporal pooling', shape: `${dims.seq} × ${dims.model} → ${dims.model}`, learnable: false,
+      description: 'Aura averages the encoded timeline into one representation for the complete motion.',
+      detail: 'Mean pooling preserves a compact fixed-size motion embedding while keeping the reward model intentionally small enough for limited preference data.'
+    },
+    {
+      id: 'head', eyebrow: '07 · Preference head', title: 'Reward MLP', shape: `${dims.model} → 64 → 1`, learnable: true,
+      description: 'A small neural head converts the motion embedding into one unconstrained scalar reward.',
+      detail: `Linear(${dims.model}, 64) → GELU → Dropout → Linear(64, 1). The scalar is meaningful comparatively: higher means the learned model currently ranks that motion above lower-scored motions.`
+    },
+    {
+      id: 'reward', eyebrow: '08 · Model output', title: 'Aura reward', shape: 'r(motion)', learnable: false,
+      description: 'The final scalar is Aura’s learned human-preference reward for a G1 trajectory.',
+      detail: 'It is not a calibrated probability, physical-safety score, or simulator task-success estimate. During training, the difference r(A) − r(B) is converted to a pairwise preference probability.'
+    },
+  ], [dims.blocks, dims.ff, dims.heads, dims.input, dims.model, dims.seq])
+
+  const selected = layers.find(layer => layer.id === active) ?? layers[0]
+
+  const runForward = () => {
+    if (timer.current != null) window.clearTimeout(timer.current)
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduced) { setActive('reward'); return }
+    setPlaying(true)
+    let index = 0
+    const step = () => {
+      setActive(layers[index].id)
+      index += 1
+      if (index >= layers.length) {
+        timer.current = window.setTimeout(() => setPlaying(false), 550)
+        return
+      }
+      timer.current = window.setTimeout(step, 520)
+    }
+    step()
+  }
+
+  const train = async () => {
+    if (training) return
+    setTraining(true)
+    setMessage('Training Aura on the saved human comparisons…')
+    try {
+      const response = await fetch('/aura-api/reward/train', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ epochs: 40 })
+      })
+      const data = await response.json().catch(() => ({})) as { error?: string }
+      if (!response.ok) throw new Error(data.error || `Training failed (${response.status})`)
+      setMessage('Aura model updated from the current preference dataset.')
+      await refresh()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Unable to train Aura.')
+    } finally {
+      setTraining(false)
+    }
+  }
+
+  const trainedAt = meta?.trained_at ? new Date(meta.trained_at * 1000).toLocaleString() : 'Not trained yet'
+
+  return (
+    <main className="fx-page aura-model-page">
+      <section className="aura-model-hero">
+        <span className="aura-model-kicker">Human-preference reward model</span>
+        <h1 className="fx-h1">Look inside<br />the Aura model.</h1>
+        <p>A compact temporal Transformer learns a scalar reward directly from human A/B choices over G1 motion. Click through the layers, then inspect the live model trained on this machine.</p>
+      </section>
+
+      <section className="aura-model-shell" aria-labelledby="aura-model-live-title">
+        <div className="aura-model-statusbar">
+          <div>
+            <span className={meta ? 'aura-model-dot is-active' : 'aura-model-dot'} aria-hidden="true" />
+            <div><strong id="aura-model-live-title">{meta ? 'Aura model active' : loading ? 'Checking Aura model…' : 'Aura model untrained'}</strong><small>{meta?.version ?? 'aura-motion-reward-transformer-v1'}</small></div>
+          </div>
+          <div className="aura-model-actions">
+            <button type="button" onClick={() => void refresh()} disabled={loading || training}>Refresh</button>
+            <button type="button" className="is-primary" onClick={() => void train()} disabled={training || Boolean(diagnostics && !diagnostics.reward_trainable)} title={diagnostics && !diagnostics.reward_trainable ? `Needs ${diagnostics.reward_min_comparisons} valid comparisons across ${diagnostics.reward_min_motions} motions` : undefined}>{training ? 'Training…' : meta ? 'Update model' : 'Train model'}</button>
+          </div>
+        </div>
+        {message && <p className="aura-model-message" role="status">{message}</p>}
+        {reward.error && !meta && <p className="aura-model-message is-muted">Live API unavailable: {reward.error}. The architecture below remains explorable.</p>}
+
+        <div className="aura-model-metrics">
+          <div><span>Valid comparisons</span><strong>{compact(diagnostics?.valid_comparison_count ?? meta?.total_comparison_count)}</strong><small>{diagnostics ? `${diagnostics.reward_min_comparisons} required to train` : 'Checking training data…'}</small></div>
+          <div><span>Unique motions</span><strong>{compact(diagnostics?.unique_motion_count ?? meta?.motion_count)}</strong><small>{diagnostics ? `${diagnostics.reward_min_motions} required · hash-deduplicated` : 'Generated G1 trajectories'}</small></div>
+          <div><span>Duplicate votes</span><strong>{compact(diagnostics?.duplicate_comparison_count ?? meta?.duplicate_comparison_count)}</strong><small>{diagnostics?.rejected_comparison_count ? `${diagnostics.rejected_comparison_count} additional rejected` : 'Duplicates do not train Aura'}</small></div>
+          <div><span>Held-out accuracy</span><strong>{pct(meta?.heldout_pair_accuracy)}</strong><small>{meta?.heldout_pair_count ? `${meta.heldout_pair_count} held-out comparisons` : 'Shown once enough unique pair groups exist'}</small></div>
+        </div>
+        {diagnostics && <div className={`aura-model-data-health ${diagnostics.reward_trainable ? 'is-ready' : ''}`}>
+          <strong>{diagnostics.reward_trainable ? 'Training data ready' : 'Training data not ready yet'}</strong>
+          <span>{diagnostics.stored_comparison_count} stored · {diagnostics.valid_comparison_count} valid · {diagnostics.unique_pair_count} unique pairs · {diagnostics.unique_motion_count} unique motions</span>
+          {(diagnostics.duplicate_comparison_count > 0 || diagnostics.rejected_comparison_count > 0) && <small>{diagnostics.duplicate_comparison_count} duplicate vote(s) and {diagnostics.rejected_comparison_count} rejected comparison(s) are excluded from training.</small>}
+        </div>}
+      </section>
+
+      <section className="aura-model-section" aria-labelledby="aura-model-architecture-title">
+        <div className="aura-model-section-head">
+          <div><span className="aura-model-kicker">Interactive architecture</span><h2 id="aura-model-architecture-title">Follow one motion through Aura.</h2></div>
+          <button type="button" className="aura-model-run" onClick={runForward} disabled={playing}>{playing ? 'Forward pass…' : 'Animate forward pass'}</button>
+        </div>
+
+        <div className="aura-model-explorer">
+          <div className="aura-model-pipeline" role="list" aria-label="Aura reward model layers">
+            {layers.map((layer, index) => (
+              <div className="aura-model-layer-wrap" key={layer.id}>
+                <button
+                  type="button"
+                  role="listitem"
+                  className={`aura-model-layer ${active === layer.id ? 'is-active' : ''} ${layer.learnable ? 'is-learned' : 'is-operation'}`}
+                  onClick={() => setActive(layer.id)}
+                  aria-pressed={active === layer.id}
+                >
+                  <span>{layer.eyebrow}</span>
+                  <strong>{layer.title}</strong>
+                  <small>{layer.shape}</small>
+                </button>
+                {index < layers.length - 1 && <span className={`aura-model-connector ${active === layers[index + 1].id && playing ? 'is-flowing' : ''}`} aria-hidden="true"><i /></span>}
+              </div>
+            ))}
+          </div>
+
+          <aside className="aura-model-layer-detail" aria-live="polite">
+            <div className="aura-model-detail-number">{selected.eyebrow.split(' · ')[0]}</div>
+            <span>{selected.learnable ? 'Learned layer' : 'Deterministic operation'}</span>
+            <h3>{selected.title}</h3>
+            <code>{selected.shape}</code>
+            <p>{selected.description}</p>
+            <p className="is-secondary">{selected.detail}</p>
+            <div className="aura-model-detail-foot"><span>{selected.learnable ? 'Weights update from human preferences' : 'No trainable parameters here'}</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <section className="aura-model-training" aria-labelledby="aura-model-training-title">
+        <div className="aura-model-training-copy">
+          <span className="aura-model-kicker">How human feedback trains it</span>
+          <h2 id="aura-model-training-title">One network. Two motions. One choice.</h2>
+          <p>Aura runs Motion A and Motion B through the same reward network. Human preference teaches the network which scalar should be higher.</p>
+          <div className="aura-model-equation"><span>P(A &gt; B)</span><b>=</b><strong>σ( r(A) − r(B) )</strong></div>
+          <small>This is the reward-modeling component used in RLHF systems. Aura does not claim full RLHF because it does not yet optimize a generator or robot policy with reinforcement learning against this reward.</small>
+        </div>
+        <div className="aura-model-pair" aria-label="Pairwise preference training diagram">
+          <div><span>Motion A</span><b>shared Aura model</b><strong>r(A)</strong></div>
+          <div className="aura-model-pair-vs">Human chooses</div>
+          <div><span>Motion B</span><b>shared Aura model</b><strong>r(B)</strong></div>
+          <div className="aura-model-pair-loss"><span>Bradley–Terry preference loss</span><strong>push the chosen motion's reward higher</strong></div>
+        </div>
+      </section>
+
+      <section className="aura-model-section aura-model-live-data" aria-labelledby="aura-model-data-title">
+        <div className="aura-model-section-head">
+          <div><span className="aura-model-kicker">Live model state</span><h2 id="aura-model-data-title">What Aura has learned so far.</h2></div>
+          <small className="aura-model-trained-at">Last trained<br /><strong>{trainedAt}</strong></small>
+        </div>
+
+        {meta ? <>
+          <div className="aura-model-validation">
+            <div><span>Training pair accuracy</span><strong>{pct(meta.train_pair_accuracy)}</strong><small>Log loss {meta.train_pair_log_loss ?? '—'}</small></div>
+            <div><span>Held-out pair accuracy</span><strong>{pct(meta.heldout_pair_accuracy)}</strong><small>Log loss {meta.heldout_pair_log_loss ?? '—'}</small></div>
+            <div><span>Sequence length</span><strong>{dims.seq}</strong><small>frames per motion</small></div>
+            <div><span>Latent width</span><strong>{dims.model}</strong><small>dimensions</small></div>
+          </div>
+
+          <div className="aura-model-ranking-head"><h3>Current motion ranking</h3><span>Raw reward is comparative, not a calibrated probability.</span></div>
+          {reward.scores.length ? <div className="aura-model-ranking">
+            {reward.scores.slice(0, 12).map((score) => {
+              const maxAbs = Math.max(1, ...reward.scores.map(item => Math.abs(item.reward)))
+              const normalized = Math.max(6, Math.min(100, 50 + (score.reward / maxAbs) * 46))
+              return <div className="aura-model-rank-row" key={score.id}>
+                <b>#{score.rank}</b><div><span>{score.name || score.id}</span><i><em style={{ width: `${normalized}%` }} /></i></div><strong>{score.reward.toFixed(3)}</strong>
+              </div>
+            })}
+          </div> : <p className="aura-model-empty">The model is trained, but there are no currently scorable library motions.</p>}
+
+          <div className="aura-model-provenance">
+            <div><span>Dataset SHA-256</span><code title={meta.dataset_sha256}>{shortHash(meta.dataset_sha256)}</code></div>
+            <div><span>Model SHA-256</span><code title={meta.model_sha256}>{shortHash(meta.model_sha256)}</code></div>
+          </div>
+        </> : <div className="aura-model-untrained">
+          <strong>No trained checkpoint yet.</strong>
+          <p>{diagnostics ? `Aura currently has ${diagnostics.valid_comparison_count} valid unique comparison${diagnostics.valid_comparison_count === 1 ? '' : 's'} across ${diagnostics.unique_motion_count} unique motion${diagnostics.unique_motion_count === 1 ? '' : 's'}. It needs ${diagnostics.reward_min_comparisons} valid comparisons across at least ${diagnostics.reward_min_motions} unique motions.` : 'Collect at least six generated-motion A/B comparisons covering four distinct motions. Then Aura can train its first reward model.'}</p>
+        </div>}
+      </section>
+
+      <section className="aura-model-caveat">
+        <strong>What the score means</strong>
+        <p>{meta?.caveat ?? 'Aura learns a human-preference reward over saved G1 trajectories. It is not physical safety validation, simulator task success, or full RLHF because no generator or robot policy is optimized with reinforcement learning against this reward.'}</p>
+      </section>
+    </main>
+  )
+}

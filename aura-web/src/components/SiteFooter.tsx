@@ -16,6 +16,8 @@ export function SiteFooter({ onPage, onWallet }: Props) {
             <div className="fx-footer__col">
               <span className="fx-footer__label">Explore</span>
               <button className="fx-link" onClick={() => go('studio')}>Motion studio</button>
+              <button className="fx-link" onClick={() => go('model')}>Aura model</button>
+              <button className="fx-link" onClick={() => go('curation')}>Curation market</button>
               <button className="fx-link" onClick={() => go('methodology')}>Methodology</button>
             </div>
             <div className="fx-footer__col">
@@ -33,7 +35,7 @@ export function SiteFooter({ onPage, onWallet }: Props) {
         </div>
         <div className="fx-footer__legal">
           <span>© {new Date().getFullYear()} Aura Technologies</span>
-          <span>Text2Motion Aura · Unitree G1</span>
+          <span>Built on NVIDIA Kimodo · Unitree G1</span>
           <span>Diagnostics, not physical certification</span>
         </div>
       </div>

@@ -1,7 +1,7 @@
 """Aura native G1 constraint screening and candidate selection.
 
 No BioIK / AI4Animation dependency. This module evaluates explicit, user-selected
-kinematic requirements on Text2Motion Aura G1 trajectories and uses Aura's learned human
+kinematic requirements on NVIDIA Kimodo G1 trajectories and uses Aura's learned human
 preference signal only as a tie-breaker. It does NOT solve inverse kinematics,
 run physics, or claim real-robot safety.
 """
@@ -19,7 +19,7 @@ from aura_preference import connect, latest, rank
 
 VERSION = "aura-native-g1-constraints-v1"
 
-# Text2Motion Aura G1Skeleton34 indices.
+# NVIDIA Kimodo G1Skeleton34 indices.
 PELVIS = 0
 LEFT_TOE = 7
 RIGHT_TOE = 14
@@ -182,7 +182,7 @@ def _motion_measurements(record: dict[str, Any]) -> dict[str, float | None]:
     root_path = float(report["root_horizontal_path_m"])
     path_efficiency = root_disp / root_path if root_path > 1e-8 else 1.0
 
-    # Text2Motion Aura G1 uses Y-up. Local +Z is the robot's forward direction in bundled G1 examples.
+    # NVIDIA Kimodo G1 uses Y-up. Local +Z is the robot's forward direction in bundled G1 examples.
     if rotations is not None and rotations.shape[:2] == p.shape[:2]:
         forward3 = rotations[0, PELVIS] @ np.array([0.0, 0.0, 1.0])
         right3 = rotations[0, PELVIS] @ np.array([1.0, 0.0, 0.0])
@@ -304,7 +304,7 @@ def evaluate_candidates(base: Path, db: Path, motion_ids: list[str], raw_constra
     )
     report = {
         "version": VERSION,
-        "scope": "Explicit kinematic filtering of saved Text2Motion Aura G1 trajectories; no IK solve, physics, balance proof, collision simulation or hardware validation.",
+        "scope": "Explicit kinematic filtering of saved NVIDIA Kimodo G1 trajectories; no IK solve, physics, balance proof, collision simulation or hardware validation.",
         "constraints": constraints,
         "selection_rule": "Hard constraint satisfaction first; Aura learned human preference signal only breaks ties. No composite quality score.",
         "selector_model_version": (model or {}).get("version"),

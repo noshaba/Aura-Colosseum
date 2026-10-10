@@ -17,6 +17,8 @@ type Motion = {
   batch_id?: string
   candidate_index?: number
   candidate_count?: number
+  generation_seed?: number
+  native_sha256?: string
 }
 
 type GeneratorExample = {
@@ -34,17 +36,54 @@ type GeneratorStatus = {
   cuda_name?: string | null
   default_duration: number
   default_diffusion_steps: number
+  seed_policy?: string
   last_error?: string | null
 }
 
-type PreferenceRecord = { id: number; winner_id: string }
+type TrainingData = {
+  stored_comparison_count: number
+  valid_comparison_count: number
+  unique_pair_count: number
+  unique_motion_count: number
+  duplicate_comparison_count: number
+  rejected_comparison_count: number
+  reward_trainable: boolean
+}
+type PreferenceRecord = { id: number; winner_id: string; training_data?: TrainingData }
 type MotionPrior = {
   model: null | { version: string; vote_count: number; motion_count: number; heldout_motion_accuracy: number | null; caveat: string }
   scores: { id: string; prior_score: number }[]
   error?: string
 }
+type RewardState = {
+  model: null | {
+    version: string
+    total_comparison_count: number
+    motion_count: number
+    parameter_count: number
+    heldout_pair_accuracy: number | null
+    caveat: string
+  }
+  scores: { id: string; reward: number; rank: number; rank_percentile: number }[]
+  error?: string
+}
 
 const AIST_STARTER_STORAGE = 'aura:aist-starter-preferences:v1'
+const EVALUATOR_STORAGE = 'aura:generated-evaluator-id:v1'
+
+function localEvaluatorId() {
+  try {
+    const existing = localStorage.getItem(EVALUATOR_STORAGE)
+    if (existing) return existing
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? `browser:${crypto.randomUUID()}`
+      : `browser:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    localStorage.setItem(EVALUATOR_STORAGE, id)
+    return id
+  } catch {
+    return `browser:${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  }
+}
 
 const FALLBACK_PROMPTS: GeneratorExample[] = [
   { id: 'fallback-walk', label: 'Forward walk', prompt: 'A humanoid robot walks forward for several steps and comes to a controlled stop.', has_constraints: false },
@@ -89,8 +128,11 @@ export function AuraGeneratorStage() {
   const [voting, setVoting] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const [prior, setPrior] = useState<MotionPrior>({ model: null, scores: [] })
+  const [, setPrior] = useState<MotionPrior>({ model: null, scores: [] })
   const [priorTraining, setPriorTraining] = useState(false)
+  const [reward, setReward] = useState<RewardState>({ model: null, scores: [] })
+  const [rewardTraining, setRewardTraining] = useState(false)
+  const [evaluatorId] = useState(() => localEvaluatorId())
   const [starterLeftIndex, setStarterLeftIndex] = useState(0)
   const [starterRightIndex, setStarterRightIndex] = useState(1)
   const [starterNextIndex, setStarterNextIndex] = useState(2)
@@ -135,6 +177,24 @@ export function AuraGeneratorStage() {
     } catch { /* learned prior is optional until enough generated comparisons exist */ }
   }, [])
 
+  const refreshReward = useCallback(async () => {
+    try {
+      const response = await fetch('/aura-api/reward', { cache: 'no-store' })
+      if (response.ok) setReward(await response.json() as RewardState)
+    } catch { /* reward model is optional until enough generated comparisons exist */ }
+  }, [])
+
+  const updateReward = useCallback(async () => {
+    if (rewardTraining) return
+    setRewardTraining(true)
+    try {
+      const response = await fetch('/aura-api/reward/train', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      if (response.ok) setReward(await response.json() as RewardState)
+      else await refreshReward()
+    } catch { /* never interrupt the human-rating loop if training is not ready yet */ }
+    finally { setRewardTraining(false) }
+  }, [rewardTraining, refreshReward])
+
   const updatePrior = useCallback(async () => {
     if (priorTraining) return
     setPriorTraining(true)
@@ -150,13 +210,14 @@ export function AuraGeneratorStage() {
     void refreshMotions().catch(() => undefined)
     void refreshStatus()
     void refreshPrior()
+    void refreshReward()
     fetch('/aura-api/generator/examples', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : Promise.reject(new Error('examples unavailable')))
       .then((data: { examples?: GeneratorExample[] }) => setExamples(data.examples?.length ? data.examples : FALLBACK_PROMPTS))
       .catch(() => setExamples(FALLBACK_PROMPTS))
     const timer = window.setInterval(() => void refreshStatus(), 3000)
     return () => window.clearInterval(timer)
-  }, [refreshMotions, refreshStatus, refreshPrior])
+  }, [refreshMotions, refreshStatus, refreshPrior, refreshReward])
 
   useEffect(() => {
     if (generating || batch.length >= 2) return
@@ -181,7 +242,7 @@ export function AuraGeneratorStage() {
   const chooseExample = (example: GeneratorExample) => {
     setSelectedExample(example.id.startsWith('fallback-') ? null : example.id)
     setPrompt(example.prompt)
-    setMessage(example.has_constraints ? 'Example selected · its saved Text2Motion Aura constraints will be applied to every candidate.' : 'Example prompt selected.')
+    setMessage(example.has_constraints ? 'Example selected · its saved NVIDIA Kimodo constraints will be applied to every candidate.' : 'Example prompt selected.')
     setError('')
   }
 
@@ -226,11 +287,18 @@ export function AuraGeneratorStage() {
           left_id: left.id,
           right_id: right.id,
           winner_id: preferredId,
+          evaluator_id: evaluatorId,
           context: 'Generated batch comparison: prefer the motion that better satisfies the shared prompt.',
         }),
       })
       const data = await response.json() as PreferenceRecord & { error?: string }
       if (!response.ok) throw new Error(data.error || 'Could not save preference.')
+      const trainingData = data.training_data
+      if (trainingData?.reward_trainable) {
+        void updateReward().then(() => updatePrior())
+      } else {
+        void refreshReward()
+      }
       if (nextIndex < batch.length) {
         const next = batch[nextIndex]
         setLeftId(preferredId)
@@ -239,14 +307,28 @@ export function AuraGeneratorStage() {
         setMessage(`Preference #${data.id} saved. The winner now faces candidate ${nextIndex + 1} of ${batch.length}.`)
       } else {
         setWinnerId(preferredId)
-        setMessage(`Preference #${data.id} saved. Batch winner selected and added to Aura's learning data.`)
+        setMessage(trainingData?.reward_trainable
+          ? `Preference #${data.id} saved. Batch winner selected. Aura has ${trainingData.valid_comparison_count} valid comparisons and is updating its reward model.`
+          : `Preference #${data.id} saved. Batch winner selected. Aura has ${trainingData?.valid_comparison_count ?? 'fewer than 6'} valid unique comparisons so far.`)
       }
       window.dispatchEvent(new CustomEvent('aura:preference-saved', { detail: { id: data.id, winner_id: preferredId } }))
-      void updatePrior()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save preference.')
     } finally {
       setVoting(false)
+    }
+  }
+
+  const skipMatchup = () => {
+    if (!left || !right || voting || winnerId) return
+    if (nextIndex < batch.length) {
+      const next = batch[nextIndex]
+      setRightId(next.id)
+      setNextIndex(value => value + 1)
+      setMessage(`Matchup skipped · no training label saved. Motion A now faces candidate ${nextIndex + 1} of ${batch.length}.`)
+    } else {
+      setWinnerId('__skipped__')
+      setMessage('Final matchup skipped · no preference was saved for this pair.')
     }
   }
 
@@ -296,7 +378,7 @@ export function AuraGeneratorStage() {
     setMessage('Starter comparison reset. Previous starter ratings remain saved locally.')
   }
 
-  const priorScore = (id?: string) => id ? prior.scores.find(item => item.id === id)?.prior_score : undefined
+  const rewardFor = (id?: string) => id ? reward.scores.find(item => item.id === id) : undefined
 
   return (
     <section className="aura-generator-stage" aria-label="Aura G1 generation and comparison">
@@ -304,11 +386,11 @@ export function AuraGeneratorStage() {
         <div>
           <div className="card-kicker">01 / GENERATE &amp; COMPARE</div>
           <h2>One prompt. <em>Multiple possibilities.</em></h2>
-          <p>Aura asks the generation engine for multiple G1 candidates, then puts them head-to-head. Your choice becomes real preference data for Aura’s discovery model.</p>
+          <p>Aura asks NVIDIA Kimodo for multiple G1 candidates, then puts them head-to-head. Your choice becomes real preference data for the Aura Motion Reward Model.</p>
         </div>
         <div className={`aura-engine-status ${status?.cuda_available ? 'ready' : ''}`}>
           <span />
-          <strong>{generating ? 'AURA GENERATING' : status?.cuda_available ? 'G1 ENGINE READY' : 'ENGINE OFFLINE'}</strong>
+          <strong>{generating ? 'AURA GENERATING' : status?.cuda_available ? 'NVIDIA KIMODO READY' : 'ENGINE OFFLINE'}</strong>
           <small>{status?.cuda_name || 'Waiting for local generator (CUDA or MPS)'}</small>
         </div>
       </div>
@@ -335,7 +417,7 @@ export function AuraGeneratorStage() {
           <button className={`aura-generate-button ${generating ? 'loading' : ''}`} disabled={generating || (!prompt.trim() && !selectedExample)} onClick={() => void generate()}>
             {generating ? <><span className="aura-button-spinner" aria-hidden="true" />Aura is generating…</> : `Generate ${candidateCount} motions →`}
           </button>
-          <small className="aura-generator-shortcut">Ctrl/Cmd + Enter to generate · default {status?.default_diffusion_steps || 30} denoising steps per candidate</small>
+          <small className="aura-generator-shortcut">Ctrl/Cmd + Enter to generate · fresh random seeds per batch · {status?.default_diffusion_steps || 30} denoising steps per candidate</small>
 
           <div className="aura-example-block">
             <div className="aura-example-head"><span>EXAMPLES</span><small>click to load</small></div>
@@ -354,10 +436,10 @@ export function AuraGeneratorStage() {
 
         <div className="aura-generator-viewer">
           <div className="aura-viewer-head">
-            <div><span>{generating ? 'GENERATING CANDIDATES' : batch.length >= 2 ? winnerId ? 'BATCH WINNER' : 'MOTION VS MOTION' : starterWinnerIndex !== null ? 'STARTER WINNER' : 'STARTER MOTION VS MOTION'}</span><strong>{batch.length >= 2 ? (winnerId ? batch.find(item => item.id === winnerId)?.name : `${batch.length} Aura candidates · tournament comparison`) : 'AIST++ preloaded motions · rate immediately'}</strong></div>
+            <div><span>{generating ? 'GENERATING CANDIDATES' : batch.length >= 2 ? winnerId ? winnerId === '__skipped__' ? 'COMPARISON COMPLETE' : 'BATCH WINNER' : 'MOTION VS MOTION' : starterWinnerIndex !== null ? 'STARTER WINNER' : 'STARTER MOTION VS MOTION'}</span><strong>{batch.length >= 2 ? (winnerId ? winnerId === '__skipped__' ? 'No forced winner · skipped matchup' : batch.find(item => item.id === winnerId)?.name : `${batch.length} Aura candidates · tournament comparison`) : 'AIST++ preloaded motions · rate immediately'}</strong></div>
             {!generating && batch.length >= 2 && <small>{winnerId ? 'Preference saved' : `match ${Math.min(nextIndex - 1, batch.length - 1)} of ${batch.length - 1}`}</small>}
             {!generating && batch.length < 2 && <small>{starterWinnerIndex !== null ? 'Starter set complete' : `starter match ${Math.min(starterNextIndex - 1, AIST_REFERENCE_MOTIONS.length - 1)} of ${AIST_REFERENCE_MOTIONS.length - 1}`}</small>}
-            {!generating && batch.length >= 2 && <small className="aura-prior-status">{prior.model ? `AMP-inspired prior active · ${prior.model.motion_count} motions` : priorTraining ? 'Learning motion prior…' : 'Motion prior learns after 6+ generated comparisons'}</small>}
+            {!generating && batch.length >= 2 && <small className="aura-prior-status">{reward.model ? `Aura reward model active · ${reward.model.total_comparison_count} comparisons · ${reward.model.motion_count} motions` : rewardTraining ? 'Training Aura reward model…' : 'Aura reward model learns after 6+ generated comparisons'}</small>}
           </div>
 
           {generating ? (
@@ -365,16 +447,17 @@ export function AuraGeneratorStage() {
           ) : left?.preview_file && right?.preview_file ? (
             <div className="aura-head-to-head">
               <article className={winnerId === left.id ? 'aura-versus-card winner' : 'aura-versus-card'}>
-                <div className="aura-versus-label"><span>MOTION A</span><small>{left.candidate_index ? `candidate ${left.candidate_index}` : left.id}{priorScore(left.id) !== undefined ? ` · learned prior ${priorScore(left.id)!.toFixed(2)}` : ''}</small></div>
+                <div className="aura-versus-label"><span>MOTION A</span><small>{left.candidate_index ? `candidate ${left.candidate_index}${left.generation_seed !== undefined ? ` · seed ${left.generation_seed}` : ''}` : left.id}</small></div>
                 <GeneratedG1RobotPreview key={`left-${left.id}`} file={`/aura-api/files/${encodeURIComponent(left.preview_file)}`} compact />
                 <button disabled={voting || Boolean(winnerId)} onClick={() => void vote(left.id)}>{winnerId === left.id ? '✓ Batch winner' : 'Pick motion A'}</button>
               </article>
               <div className="aura-versus-mark" aria-hidden="true">VS</div>
               <article className={winnerId === right.id ? 'aura-versus-card winner' : 'aura-versus-card'}>
-                <div className="aura-versus-label"><span>MOTION B</span><small>{right.candidate_index ? `candidate ${right.candidate_index}` : right.id}{priorScore(right.id) !== undefined ? ` · learned prior ${priorScore(right.id)!.toFixed(2)}` : ''}</small></div>
+                <div className="aura-versus-label"><span>MOTION B</span><small>{right.candidate_index ? `candidate ${right.candidate_index}${right.generation_seed !== undefined ? ` · seed ${right.generation_seed}` : ''}` : right.id}</small></div>
                 <GeneratedG1RobotPreview key={`right-${right.id}`} file={`/aura-api/files/${encodeURIComponent(right.preview_file)}`} compact />
                 <button disabled={voting || Boolean(winnerId)} onClick={() => void vote(right.id)}>{winnerId === right.id ? '✓ Batch winner' : 'Pick motion B'}</button>
               </article>
+              <button type="button" className="aura-skip-matchup" disabled={voting || Boolean(winnerId)} onClick={skipMatchup}>Neither / skip matchup</button>
             </div>
           ) : (
             <div className="aura-head-to-head aura-starter-head-to-head">
@@ -399,7 +482,12 @@ export function AuraGeneratorStage() {
 
           {!generating && batch.length >= 2 && <div className="aura-batch-strip">
             <span>BATCH CANDIDATES</span>
-            <div>{batch.map((motion, index) => <div key={motion.id} className={motion.id === winnerId ? 'winner' : motion.id === leftId || motion.id === rightId ? 'active' : ''}><b>{String(index + 1).padStart(2, '0')}</b><span>{motion.id}</span></div>)}</div>
+            <div>{batch.map((motion, index) => <div key={motion.id} className={motion.id === winnerId ? 'winner' : motion.id === leftId || motion.id === rightId ? 'active' : ''}><b>{String(index + 1).padStart(2, '0')}</b><span>{motion.id}{motion.generation_seed !== undefined ? ` · seed ${motion.generation_seed}` : ''}{motion.native_sha256 ? ` · ${motion.native_sha256.slice(0, 8)}…` : ''}</span></div>)}</div>
+            {winnerId && winnerId !== '__skipped__' && reward.model && <section className="aura-reward-reveal" aria-label="Aura model ranking after human vote">
+              <strong>AURA MODEL · POST-VOTE RANKING</strong>
+              <small>Scores are revealed only after the human comparison to avoid biasing the label.</small>
+              <div>{[...batch].sort((a, b) => (rewardFor(a.id)?.rank || 9999) - (rewardFor(b.id)?.rank || 9999)).map(motion => { const item = rewardFor(motion.id); return <span key={motion.id}><b>#{item?.rank ?? '–'}</b> {motion.candidate_index ? `Candidate ${motion.candidate_index}` : motion.id}<em>{item ? item.reward.toFixed(3) : 'unscored'}</em></span> })}</div>
+            </section>}
             {winnerId && <button className="aura-reset-comparison" onClick={resetTournament}>Compare batch again</button>}
           </div>}
           {!generating && batch.length < 2 && <div className="aura-batch-strip aura-starter-strip">

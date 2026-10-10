@@ -1,13 +1,16 @@
-"""Persistent Text2Motion Aura G1 generation service used by Aura's local API.
+"""Persistent NVIDIA Kimodo G1 generation adapter used by Aura's local API.
 
-This module deliberately does not expose the upstream editor. It loads the
-Text2Motion Aura G1 model lazily, reuses it across requests, and publishes generated NPZ
-motions into Aura's existing motion library.
+The internal ``text2motion_aura`` package/folder is a compatibility namespace for
+the vendored upstream integration. The actual generation model is NVIDIA Kimodo;
+Aura's original contribution begins at evaluation, preference collection, reward
+modeling, ranking, experiments and curation.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -19,7 +22,21 @@ import numpy as np
 MODEL_NAME = os.environ.get("AURA_TEXT2MOTION_MODEL", "g1-rp")
 DEFAULT_DURATION = float(os.environ.get("AURA_TEXT2MOTION_DURATION", "5.0"))
 DEFAULT_STEPS = int(os.environ.get("AURA_TEXT2MOTION_STEPS", "30"))
-DEFAULT_SEED = int(os.environ.get("AURA_TEXT2MOTION_SEED", "42"))
+DEFAULT_SEED_ENV = os.environ.get("AURA_TEXT2MOTION_SEED", "").strip()
+MAX_UNIQUENESS_ATTEMPTS = int(os.environ.get("AURA_GENERATION_UNIQUENESS_ATTEMPTS", "12"))
+
+
+def _random_seed() -> int:
+    # 31-bit seeds are accepted by the upstream helpers and are easy to display/reproduce.
+    return secrets.randbelow(2_147_483_647)
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def _text2motion_root() -> Path:
@@ -100,13 +117,14 @@ class AuraText2MotionGenerator:
         cuda_available = device is not None
         cuda_name = device_name
         return {
-            "model": "text2motion-aura-g1",
+            "model": "nvidia-kimodo-g1",
             "model_loaded": self._model is not None,
             "busy": self._busy,
             "cuda_available": cuda_available,
             "cuda_name": cuda_name,
             "default_duration": DEFAULT_DURATION,
             "default_diffusion_steps": DEFAULT_STEPS,
+            "seed_policy": "fixed_from_env" if DEFAULT_SEED_ENV else "fresh_random_per_batch",
             "last_error": self._last_error,
         }
 
@@ -129,7 +147,7 @@ class AuraText2MotionGenerator:
         if MODEL_NAME.lower() in {"g1", "g1-rp", "text2motion-aura-g1", "text2motion-aura-g1-rp"}:
             match = next((i.short_key for i in MODEL_INFOS if i.skeleton.upper() == "G1" and i.dataset.upper() == "RP" and i.family.upper() != "TMR"), None)
             if match is None:
-                raise RuntimeError("No G1 RP generation model is available in Text2Motion Aura.")
+                raise RuntimeError("No G1 RP generation model is available in the NVIDIA Kimodo integration.")
             resolved_request = match
         self._model, self._resolved_model = load_model(
             resolved_request,
@@ -150,7 +168,7 @@ class AuraText2MotionGenerator:
             raise ValueError("Invalid example id") from exc
         meta_path = folder / "meta.json"
         if not meta_path.is_file():
-            raise ValueError("Unknown Text2Motion Aura example")
+            raise ValueError("Unknown NVIDIA Kimodo example")
         meta = json.loads(meta_path.read_text())
         texts = meta.get("texts") or ([meta.get("text")] if meta.get("text") else [])
         durations = meta.get("durations") or ([meta.get("duration", DEFAULT_DURATION)] * len(texts))
@@ -175,7 +193,7 @@ class AuraText2MotionGenerator:
 
         def sample_array(value):
             arr = np.asarray(value)
-            # Text2Motion Aura model outputs include a leading sample dimension.
+            # NVIDIA Kimodo model outputs include a leading sample dimension.
             if arr.ndim > 0 and arr.shape[0] > sample_idx:
                 return arr[sample_idx]
             return arr
@@ -196,12 +214,13 @@ class AuraText2MotionGenerator:
         if "foot_contacts" in output:
             arrays["foot_contacts"] = sample_array(output["foot_contacts"])
         np.savez(native_path, **arrays)
+        native_sha256 = _file_sha256(native_path)
         preview_path.write_bytes(g1_preview_bytes(posed, fps, global_rot))
         item = {
             "id": uid,
             "name": (prompt or "Generated G1 motion").strip()[:100],
-            "model": "text2motion-aura-g1",
-            "sample": "aura-direct-generator",
+            "model": "nvidia-kimodo-g1",
+            "sample": "aura-kimodo-adapter",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "frames": int(len(posed)),
             "fps": float(fps),
@@ -209,6 +228,7 @@ class AuraText2MotionGenerator:
             "preview_file": preview_path.name,
             "preview_error": None,
             "evaluation_status": "awaiting_review",
+            "native_sha256": native_sha256,
         }
         if batch_id:
             item["batch_id"] = batch_id
@@ -224,6 +244,37 @@ class AuraText2MotionGenerator:
         tmp.replace(meta)
         return item
 
+    def _existing_native_hashes(self) -> set[str]:
+        hashes: set[str] = set()
+        for record_path in self.library_dir.glob("*.json"):
+            if record_path.name.endswith(".g1.json"):
+                continue
+            try:
+                item = json.loads(record_path.read_text())
+                digest = str(item.get("native_sha256") or "").strip().lower()
+                native_name = item.get("native_file")
+                if not digest and native_name:
+                    native = (self.library_dir / str(native_name)).resolve()
+                    if native.parent == self.library_dir.resolve() and native.is_file():
+                        digest = _file_sha256(native)
+                if len(digest) == 64:
+                    hashes.add(digest)
+            except Exception:
+                continue
+        return hashes
+
+    def _discard_published(self, item: dict[str, Any]) -> None:
+        for key in ("native_file", "preview_file"):
+            name = item.get(key)
+            if not name:
+                continue
+            path = (self.library_dir / str(name)).resolve()
+            if path.parent == self.library_dir.resolve():
+                path.unlink(missing_ok=True)
+        motion_id = item.get("id")
+        if motion_id:
+            (self.library_dir / f"{motion_id}.json").unlink(missing_ok=True)
+
     def generate(
         self,
         *,
@@ -236,10 +287,14 @@ class AuraText2MotionGenerator:
     ) -> dict[str, Any]:
         prompt = (prompt or "").strip()
         if not prompt and not example_id:
-            raise ValueError("Enter a motion prompt or choose a Text2Motion Aura example.")
+            raise ValueError("Enter a motion prompt or choose an NVIDIA Kimodo example.")
         duration = float(duration if duration is not None else DEFAULT_DURATION)
         diffusion_steps = int(diffusion_steps if diffusion_steps is not None else DEFAULT_STEPS)
-        seed = int(seed if seed is not None else DEFAULT_SEED)
+        explicit_seed = seed is not None or bool(DEFAULT_SEED_ENV)
+        if seed is None:
+            seed = int(DEFAULT_SEED_ENV) if DEFAULT_SEED_ENV else _random_seed()
+        else:
+            seed = int(seed)
         count = int(count if count is not None else 2)
         if not 1.0 <= duration <= 12.0:
             raise ValueError("Duration must be between 1 and 12 seconds.")
@@ -249,7 +304,7 @@ class AuraText2MotionGenerator:
             raise ValueError("Generate between 2 and 6 motion candidates per batch.")
 
         if not self._lock.acquire(blocking=False):
-            raise RuntimeError("Text2Motion Aura is already generating a motion. Wait for the current generation to finish.")
+            raise RuntimeError("NVIDIA Kimodo is already generating a motion. Wait for the current generation to finish.")
         self._busy = True
         self._last_error = None
         try:
@@ -266,7 +321,8 @@ class AuraText2MotionGenerator:
                 num_frames = [max(1, int(float(d) * model.fps)) for d in durations]
                 if constraints_path:
                     constraints = load_constraints_lst(str(constraints_path), model.skeleton)
-                seed = int(meta.get("seed", seed))
+                # Do not reuse the example's bundled seed for ordinary generation.
+                # Fresh batches must produce fresh candidates; callers can still pass an explicit seed.
                 # Keep the user's quicker preview step count unless explicitly requested in the POST.
                 cfg = meta.get("cfg") if isinstance(meta.get("cfg"), dict) else None
                 if cfg and not cfg.get("enabled", True):
@@ -282,35 +338,60 @@ class AuraText2MotionGenerator:
 
             # Generate candidates sequentially. On 16 GB GPUs this is more reliable than
             # batching several diffusion samples into one large CUDA allocation, while the
-            # already-loaded Text2Motion Aura model is reused across the whole request.
+            # already-loaded NVIDIA Kimodo model is reused across the whole request.
             batch_id = uuid.uuid4().hex[:12]
             items: list[dict[str, Any]] = []
+            used_hashes = self._existing_native_hashes()
+            used_seeds: set[int] = set()
             for candidate_index in range(count):
-                candidate_seed = seed + candidate_index
-                seed_everything(candidate_seed)
-                kwargs: dict[str, Any] = {
-                    "constraint_lst": constraints,
-                    "num_denoising_steps": diffusion_steps,
-                    "num_samples": 1,
-                    "multi_prompt": True,
-                    "num_transition_frames": 5,
-                    "post_processing": False,
-                    "return_numpy": True,
-                    "cfg_type": cfg_type,
-                }
-                if cfg_weight is not None:
-                    kwargs["cfg_weight"] = cfg_weight
-                with torch.inference_mode():
-                    output = model(texts, num_frames, **kwargs)
-                items.append(self._publish(
-                    output,
-                    float(model.fps),
-                    prompt_label,
-                    batch_id=batch_id,
-                    candidate_index=candidate_index + 1,
-                    candidate_count=count,
-                    generation_seed=candidate_seed,
-                ))
+                accepted: dict[str, Any] | None = None
+                for attempt in range(max(1, MAX_UNIQUENESS_ATTEMPTS)):
+                    if attempt == 0:
+                        candidate_seed = int(seed + candidate_index) % 2_147_483_647
+                    elif explicit_seed:
+                        # Keep explicit-seed runs reproducible while walking away from duplicates.
+                        candidate_seed = int(seed + candidate_index + attempt * count) % 2_147_483_647
+                    else:
+                        candidate_seed = _random_seed()
+                    while candidate_seed in used_seeds:
+                        candidate_seed = (candidate_seed + 1) % 2_147_483_647
+                    used_seeds.add(candidate_seed)
+                    seed_everything(candidate_seed)
+                    kwargs: dict[str, Any] = {
+                        "constraint_lst": constraints,
+                        "num_denoising_steps": diffusion_steps,
+                        "num_samples": 1,
+                        "multi_prompt": True,
+                        "num_transition_frames": 5,
+                        "post_processing": False,
+                        "return_numpy": True,
+                        "cfg_type": cfg_type,
+                    }
+                    if cfg_weight is not None:
+                        kwargs["cfg_weight"] = cfg_weight
+                    with torch.inference_mode():
+                        output = model(texts, num_frames, **kwargs)
+                    item = self._publish(
+                        output,
+                        float(model.fps),
+                        prompt_label,
+                        batch_id=batch_id,
+                        candidate_index=candidate_index + 1,
+                        candidate_count=count,
+                        generation_seed=candidate_seed,
+                    )
+                    digest = str(item.get("native_sha256") or "")
+                    if digest and digest not in used_hashes:
+                        used_hashes.add(digest)
+                        accepted = item
+                        break
+                    self._discard_published(item)
+                if accepted is None:
+                    raise RuntimeError(
+                        f"Could not produce a unique candidate {candidate_index + 1}/{count} after "
+                        f"{MAX_UNIQUENESS_ATTEMPTS} attempts. Try another prompt or increase AURA_GENERATION_UNIQUENESS_ATTEMPTS."
+                    )
+                items.append(accepted)
             return {
                 "ok": True,
                 # Keep the first motion for backward compatibility with older clients.
@@ -322,6 +403,9 @@ class AuraText2MotionGenerator:
                     "duration_s": sum(num_frames) / float(model.fps),
                     "diffusion_steps": diffusion_steps,
                     "seed": seed,
+                    "seed_policy": "explicit" if explicit_seed else "fresh_random_per_batch",
+                    "candidate_seeds": [item.get("generation_seed") for item in items],
+                    "candidate_sha256": [item.get("native_sha256") for item in items],
                     "count": count,
                     "batch_id": batch_id,
                     "device": self._device,

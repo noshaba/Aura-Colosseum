@@ -73,7 +73,7 @@ else:
     print("WARNING: CUDA is unavailable. Judge Mode can run, but live generation will not be fast/usable.")
 PY
 
-echo "Installing Text2Motion Aura..."
+echo "Installing NVIDIA Kimodo compatibility package..."
 python -m pip install -e "$ROOT/text2motion-aura"
 
 echo "Installing Aura web dependencies..."

@@ -1,10 +1,10 @@
 # Submission experiment protocol
 
-Use this protocol for results you intend to cite. Do not cite Judge Mode or the bundled Text2Motion Aura examples as Aura performance evidence.
+Use this protocol for results you intend to cite. Do not cite Judge Mode or the bundled NVIDIA Kimodo examples as Aura performance evidence.
 
 ## Cohort
 
-Use one exact prompt and one Text2Motion Aura model/configuration. Generate at least 12 candidates; 20 is preferable. Keep prompt, model, duration, diffusion settings and skeleton fixed. Different random seeds are fine.
+Use one exact prompt and one NVIDIA Kimodo model/configuration. Generate at least 12 candidates; 20 is preferable. Keep prompt, model, duration, diffusion settings and skeleton fixed. Different random seeds are fine.
 
 ## Human comparisons
 

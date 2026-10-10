@@ -1,5 +1,5 @@
 /**
- * A G1 STL robot driven by Text2Motion Aura global joint rotations, played IN PLACE:
+ * A G1 STL robot driven by NVIDIA Kimodo · Aura integration global joint rotations, played IN PLACE:
  * horizontal root travel is removed per frame, the clip is turned so its first
  * frame faces +z (the camera), and a windowed floor estimate keeps terrain clips
  * (stairs) on the pedestal. Root height and every rotation are otherwise kept.

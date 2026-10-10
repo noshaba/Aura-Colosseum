@@ -1,15 +1,15 @@
-# Aura / Text2Motion Aura — New Machine Installation
+# Aura + NVIDIA Kimodo — New Machine Installation
 
 This guide installs the **live Aura stack** on a fresh Linux machine.
 
 Aura's live stack consists of:
 
-1. **Text2Motion Aura text encoder** — runs on CPU by default.
-2. **Text2Motion Aura G1 generator** — runs on the NVIDIA GPU.
+1. **NVIDIA Kimodo text encoder** — runs on CPU by default.
+2. **NVIDIA Kimodo G1 generator** — runs on the NVIDIA GPU.
 3. **Aura local API** — stores motions, comparisons, learned priors, and experiment data.
 4. **Aura web app** — React/Vite frontend at `http://localhost:5173`.
 
-The standalone Text2Motion Aura/Viser demo is **not required** for the current Aura UI.
+The standalone NVIDIA Kimodo/Viser demo is **not required** for the current Aura UI.
 
 ---
 
@@ -149,7 +149,7 @@ Never commit or share the Hugging Face token.
 
 ---
 
-## 7. Install Text2Motion Aura
+## 7. Install the NVIDIA Kimodo compatibility package
 
 From the Aura repository root:
 
@@ -162,7 +162,7 @@ python -m pip install -e .
 cd ..
 ```
 
-Aura uses Text2Motion Aura directly as a Python generation library. You do **not** need to install the optional Viser demo dependencies for the normal Aura web interface.
+Aura uses NVIDIA Kimodo as its upstream Python generation library. The local `text2motion_aura` package name is retained only as a compatibility namespace. You do **not** need to install the optional Viser demo dependencies for the normal Aura web interface.
 
 Verify imports:
 
@@ -170,7 +170,7 @@ Verify imports:
 python - <<'PY'
 import torch
 import text2motion_aura
-print("Text2Motion Aura import: OK")
+print("NVIDIA Kimodo compatibility import: OK")
 print("CUDA available:", torch.cuda.is_available())
 PY
 ```
@@ -215,7 +215,7 @@ chmod +x scripts/run_aura_live.sh
 The launcher starts:
 
 ```text
-Text2Motion Aura text encoder  -> CPU, port 9550
+NVIDIA Kimodo text encoder      -> CPU, port 9550
 Aura API + G1 generator        -> GPU, port 8765
 Aura web app                   -> port 5173
 ```
@@ -442,4 +442,4 @@ text2motion-aura/LICENSE
 text2motion-aura/ATTRIBUTIONS.MD
 ```
 
-The Text2Motion Aura fork retains required upstream NVIDIA/third-party attribution and model identifiers. Renaming the integration does not remove upstream license obligations.
+The local compatibility namespace retains required upstream NVIDIA/third-party attribution and model identifiers. NVIDIA Kimodo remains the upstream generation model and its license obligations continue to apply.

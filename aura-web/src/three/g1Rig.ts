@@ -49,7 +49,7 @@ const G1_MESH_JOINTS: Record<number, string[]> = {
 export const FILE_TO_JOINT = new Map<string, number>()
 Object.entries(G1_MESH_JOINTS).forEach(([joint, files]) => files.forEach(file => FILE_TO_JOINT.set(file, Number(joint))))
 
-// MuJoCo (z-up, x-forward) -> Text2Motion Aura / Three.js (y-up, z-forward).
+// MuJoCo (z-up, x-forward) -> NVIDIA Kimodo · Aura integration / Three.js (y-up, z-forward).
 const MUJOCO_TO_TEXT2MOTION_AURA = new THREE.Matrix4().set(
   0, 1, 0, 0,
   0, 0, 1, 0,

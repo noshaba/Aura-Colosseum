@@ -1,1 +1,1 @@
-export type Page = 'studio' | 'methodology'
+export type Page = 'studio' | 'model' | 'curation' | 'methodology'

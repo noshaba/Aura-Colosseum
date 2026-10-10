@@ -78,7 +78,7 @@ export function GeneratedMotionPreview({ file }: { file: string }) {
             fairyMats.push(body, ink)
             scene.add(fairy.root)
           } else strokes = makeStrokes(data.parents.filter(p => p >= 0).length)
-          // Text2Motion Aura already exports G1 joints in Three.js-compatible axes:
+          // NVIDIA Kimodo already exports G1 joints in Three.js-compatible axes:
           // X right, Y up, Z forward. Preview the complete trajectory instead
           // of aiming at just the first frame (walking would leave the view).
           const bounds = new THREE.Box3()
@@ -152,7 +152,7 @@ export function GeneratedMotionPreview({ file }: { file: string }) {
           for (let joint=0;joint<data.parents.length;joint++) {
             const parent=data.parents[joint]
             if (parent<0) continue
-            // Text2Motion Aura's generated G1 positions are Y-up and Z-forward,
+            // NVIDIA Kimodo's generated G1 positions are Y-up and Z-forward,
             // matching Three.js. Do NOT apply MuJoCo's Z-up transform here.
             const a=coords[joint], b=coords[parent]
             out[edge*6]=a[0]; out[edge*6+1]=a[1]; out[edge*6+2]=a[2]

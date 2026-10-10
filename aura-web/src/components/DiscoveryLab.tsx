@@ -53,7 +53,7 @@ export function DiscoveryLab(){
   return <section className="discovery-section" aria-label="G1 human preference discovery">
     <div className="card-kicker">04 / DISCOVER WITH HUMAN PREFERENCES</div>
     <h2>Human judgment. <em>Learned selection.</em></h2>
-    <p>Compare two generated G1 motions for the <strong>same task</strong>. A real small model learns from saved choices and ranks existing candidates. Ranking does not retrain or steer Text2Motion Aura's generator.</p>
+    <p>Compare two generated G1 motions for the <strong>same task</strong>. A real small model learns from saved choices and ranks existing candidates. Ranking does not retrain or steer NVIDIA Kimodo's generator.</p>
     {error&&<div className="generated-library-warning" role="alert">{error}</div>}{notice&&<p role="status">{notice}</p>}
     <div className="discovery-context"><label htmlFor="discovery-context">What are you judging?</label><input id="discovery-context" maxLength={240} value={context} onChange={e=>setContext(e.target.value)} placeholder="Describe the shared task and preference criterion"/></div>
     <div className="discovery-pair">{([a,b] as const).map((m,i)=><div className="discovery-candidate" key={i}>

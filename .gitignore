@@ -17,3 +17,12 @@ aura-web/dist/
 # Claude Code agents/skills (kept local)
 .claude/
 skills-lock.json
+
+# Aura learned model/runtime artifacts
+aura-motion-reward-v1.pt
+aura-motion-reward-v1.json
+aura-motion-prior*.json
+aura-motion-prior*.npz
+.aura-logs/
+*.sqlite
+*.db

@@ -1,4 +1,4 @@
-"""G1 native browser preview payload from Text2Motion Aura world-space poses."""
+"""G1 native browser preview payload from NVIDIA Kimodo · Aura integration world-space poses."""
 import json
 import numpy as np
 

@@ -47,10 +47,9 @@ class DiscoveryTests(unittest.TestCase):
         with self.assertRaises(ValueError):add_preference(self.conn,self.base,'motion0','motion1','motion2','Task')
         with self.assertRaises(ValueError):add_preference(self.conn,self.base,'motion0','motion1','motion1','')
         with self.assertRaises(ValueError):train(self.conn,self.base)
-    def test_train_no_fabricated_holdout(self):
+    def test_repeated_legacy_pair_does_not_inflate_training(self):
         for _ in range(6):add_preference(self.conn,self.base,'motion0','motion1','motion0','Task')
-        m=train(self.conn,self.base)
-        self.assertIsNone(m['heldout_accuracy'])
-        self.assertEqual(m['training_count'],6)
+        with self.assertRaisesRegex(ValueError, '1 valid unique comparisons'):
+            train(self.conn,self.base)
 
 if __name__=='__main__':unittest.main()

@@ -40,7 +40,7 @@ export function AistDanceReference(){
 
   return <section className="aist-reference-section">
     <div className="aist-reference-head">
-      <div><div className="card-kicker">REFERENCE / AIST++</div><h2>Retargeted <em>dance motion.</em></h2><p>This is the original bundled AIST++ human dance reference retargeted onto Aura's Unitree G1 viewer. It is a reference/demo asset, not a Text2Motion Aura generation and not part of the downstream experiment unless you explicitly include it.</p></div>
+      <div><div className="card-kicker">REFERENCE / AIST++</div><h2>Retargeted <em>dance motion.</em></h2><p>This is the original bundled AIST++ human dance reference retargeted onto Aura's Unitree G1 viewer. It is a reference/demo asset, not a NVIDIA Kimodo generation and not part of the downstream experiment unless you explicitly include it.</p></div>
       <div className="aist-reference-controls"><label>CLIP<select value={index} onChange={e=>setIndex(Number(e.target.value))}>{AIST_REFERENCE_MOTIONS.map((m,i)=><option key={m.id} value={i}>{m.label}</option>)}</select></label></div>
     </div>
     <div className="aist-reference-viewer">

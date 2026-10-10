@@ -348,7 +348,7 @@ def curate(conn: sqlite3.Connection, base: Path, payload: dict[str, Any]) -> dic
     right_prompt = str(right_motion.get('name') or '').strip()
     if left_prompt and right_prompt and left_prompt != right_prompt:
         raise ValueError('Bounty curations must compare motions generated from the same exact prompt')
-    # Text2Motion Aura stores the prompt in the motion name (truncated to 100 chars).
+    # The NVIDIA Kimodo adapter stores the prompt in the motion name (truncated to 100 chars).
     if left_prompt and left_prompt != str(bounty['prompt']).strip()[:100]:
         raise ValueError('Selected motions do not belong to this bounty prompt')
     ordered_left, ordered_right = sorted((left_id, right_id))
@@ -358,7 +358,7 @@ def curate(conn: sqlite3.Connection, base: Path, payload: dict[str, Any]) -> dic
         (bounty_id, curator, ordered_left, ordered_right, ordered_right, ordered_left),
     ).fetchone():
         raise ValueError("This curator already evaluated this pair for the bounty")
-    pref = add_preference(conn, base, left_id, right_id, winner_id, f"Bounty {bounty_id}: {bounty['criterion']}")
+    pref = add_preference(conn, base, left_id, right_id, winner_id, f"Bounty {bounty_id}: {bounty['criterion']}", f"wallet:{curator}")
     evidence = {
         "bounty_id": bounty_id,
         "preference_id": pref["id"],

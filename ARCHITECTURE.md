@@ -4,23 +4,37 @@
 
 ```text
 Browser / Aura Web
-  ├─ Text2Motion Aura iframe ───────────────► Text2Motion Aura GPU service
-  ├─ Motion Library ──────────────► local Aura API
-  ├─ Discovery / Constraints ─────► SQLite + NPZ files
-  ├─ Downstream Benchmark ────────► deterministic Python experiment
-  └─ Curation Market ─────────────► Phantom/Solflare ─► Solana devnet
-                                      │
-                                      └─ SOL transfer + evidence memo
+  ├─ Prompt + batch request ───────────────► local Aura API
+  │                                          │
+  │                                          └─ NVIDIA Kimodo G1 generator (GPU)
+  │                                               ├─ fresh seed per batch
+  │                                               └─ hash-deduplicated NPZ candidates
+  ├─ Human A/B preferences ───────────────► SQLite + immutable motion hashes
+  │                                          ├─ per-evaluator pair deduplication
+  │                                          └─ training-data diagnostics
+  ├─ Aura Reward Model ───────────────────► temporal Transformer reward + rankings
+  ├─ AMP-inspired prior ──────────────────► trajectory prior learned from valid preferences
+  ├─ Discovery / Constraints ─────────────► baseline selector + explicit G1 checks
+  ├─ Downstream Benchmark ────────────────► deterministic Python experiment
+  └─ Curation Market ─────────────────────► Phantom/Solflare ─► Solana devnet
+                                             │
+                                             └─ SOL transfer + evidence memo
 ```
 
-Text2Motion Aura writes robot-native motion files to `aura-motion-library/`. The local API never receives wallet private keys. Wallet signing happens in the browser.
+NVIDIA Kimodo is the upstream motion generator. The internal `text2motion-aura/` folder/package name is retained only as a compatibility namespace from an earlier integration rename; it is not an Aura-authored generation model.
+
+Generated robot-native motion files are written to `aura-motion-library/`. Default live generation uses a fresh random batch seed and rejects duplicate NPZ hashes before a candidate is admitted to the library. Passing an explicit seed remains available for reproducible experiments.
+
+Preference rows store the motion hashes seen at voting time. The training pipeline rechecks those hashes, rejects changed/identical motions, and de-duplicates repeated votes by evaluator + content pair before either learned model trains.
+
+The local API never receives wallet private keys. Wallet signing happens in the browser.
 
 ## Judge Mode
 
 ```text
 static Vite site
    ↓
-bundled Text2Motion Aura example previews
+bundled NVIDIA Kimodo example previews
    ↓
 browser-local pairwise votes
    ↓

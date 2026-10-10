@@ -28,10 +28,20 @@ def main():
         native = Path(td) / item['native_file']
         preview = Path(td) / item['preview_file']
         assert native.is_file() and preview.is_file()
+        assert len(item['native_sha256']) == 64
+        assert item['native_sha256'] in g._existing_native_hashes()
+        duplicate = g._publish({
+            'posed_joints': posed,
+            'global_rot_mats': rotations,
+            'local_rot_mats': rotations.copy(),
+        }, 30.0, 'generator test', batch_id='batch-test-2', candidate_index=1, candidate_count=2, generation_seed=99)
+        assert duplicate['native_sha256'] == item['native_sha256']
+        g._discard_published(duplicate)
+        assert not (Path(td) / f"{duplicate['id']}.json").exists()
         payload = json.loads(preview.read_text())
         assert payload['format'] == 'g1-joints-v2'
         assert len(payload['positions']) == frames
-    print('generator API helper tests passed', len(examples), 'Text2Motion Aura examples')
+    print('generator API helper tests passed', len(examples), 'NVIDIA Kimodo · Aura integration examples')
 
 
 if __name__ == '__main__':

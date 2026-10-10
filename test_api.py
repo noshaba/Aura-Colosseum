@@ -34,15 +34,26 @@ class ApiTest(unittest.TestCase):
                 def post(path,payload):
                     data=json.dumps(payload).encode()
                     with urlopen(Request('http://127.0.0.1:8765'+path,data=data,headers={'Content-Type':'application/json'}),timeout=5) as f:return json.load(f)
-                saved=post('/preferences',{'left_id':'motion0','right_id':'motion1','winner_id':'motion0','context':'walking forward'})
+                saved=post('/preferences',{'left_id':'motion0','right_id':'motion1','winner_id':'motion0','context':'walking forward','evaluator_id':'test:0'})
                 self.assertEqual(len(saved['evidence_sha256']),64)
-                for i in range(5):post('/preferences',{'left_id':'motion0','right_id':'motion2','winner_id':'motion0','context':'walking forward'})
+                votes_to_add=[
+                    ('motion0','motion2','motion0','test:0'),
+                    ('motion1','motion2','motion1','test:0'),
+                    ('motion0','motion1','motion0','test:1'),
+                    ('motion0','motion2','motion0','test:1'),
+                    ('motion1','motion2','motion1','test:1'),
+                ]
+                for left,right,winner,evaluator in votes_to_add:
+                    post('/preferences',{'left_id':left,'right_id':right,'winner_id':winner,'context':'walking forward','evaluator_id':evaluator})
                 trained=post('/train',{})
                 self.assertEqual(trained['training_count'],6)
                 with urlopen('http://127.0.0.1:8765/rankings') as f: ranked=json.load(f)
                 self.assertEqual(len(ranked['rankings']),3)
                 with urlopen('http://127.0.0.1:8765/preferences') as f: votes=json.load(f)
                 self.assertEqual(len(votes['preferences']),6)
+                with urlopen('http://127.0.0.1:8765/preferences/diagnostics') as f: diagnostics=json.load(f)
+                self.assertEqual(diagnostics['valid_comparison_count'],6)
+                self.assertEqual(diagnostics['duplicate_comparison_count'],0)
                 with urlopen('http://127.0.0.1:8765/constraints/presets') as f: presets=json.load(f)
                 self.assertGreaterEqual(len(presets['presets']),3)
                 constraint_report=post('/constraints/evaluate',{'motion_ids':['motion0','motion1','motion2'],'constraints':{'max_root_height_range_m':0.5,'max_below_floor_fraction':0.5}})

@@ -12,7 +12,7 @@ const FLOW:ComponentProps<typeof UseCaseShapes>['cases']=[
   {title:'Compare generated motions',body:'Pick between two G1 candidates side by side. Every pick is stored as one pairwise comparison.'},
   {title:'Learn preferences',body:'A pairwise logistic model trains in-browser on six kinematic feature families once four comparisons exist.'},
   {title:'Rank candidates',body:'The learned weights order every bundled motion by predicted human preference, with the raw signal shown.'},
-  {title:'Live mode adds the rest',body:'Constraints, the downstream benchmark and SOL curation payouts run in the live workspace with Text2Motion Aura.'},
+  {title:'Live mode adds the rest',body:'Constraints, the downstream benchmark and SOL curation payouts run in the live workspace with NVIDIA Kimodo.'},
 ]
 const sigmoid=(x:number)=>1/(1+Math.exp(-Math.max(-30,Math.min(30,x))))
 function readVotes():Vote[]{try{return JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{return[]}}
@@ -68,7 +68,7 @@ export function JudgeDemoLab(){
         </div>
         <div className="fx-about__right">
           <ol className="fx-steps">{PIPELINE_ITEMS.slice(0,6).map((s,i)=><li key={s.label}><span className={`fx-steps__dot is-${i+1}`} aria-hidden="true" /><b>{String(i+1).padStart(2,'0')}</b>{s.label}</li>)}</ol>
-          <p>Judge Mode uses NVIDIA Text2Motion Aura's bundled G1 examples solely to make the interface accessible without model weights or CUDA. Submission claims should use your separately collected same-prompt experiment, not these samples.</p>
+          <p>Judge Mode uses NVIDIA Kimodo's bundled G1 examples solely to make the interface accessible without model weights or CUDA. Submission claims should use your separately collected same-prompt experiment, not these samples.</p>
         </div>
       </div>
     </section>

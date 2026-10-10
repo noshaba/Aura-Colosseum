@@ -13,7 +13,7 @@ export function MotionStudio() {
       <HeroArena />
       <section className="fx-hero">
         <h1 className="fx-h1">Human-guided robot data.<br />Try it without a GPU.</h1>
-        <p className="fx-hero__lede">This static mode lets judges inspect motions, collect comparisons, and train Aura's small preference model in-browser. Live mode adds Text2Motion Aura generation, constraint screening, downstream experiments, and Solana curation payouts.</p>
+        <p className="fx-hero__lede">This static mode lets judges inspect motions, collect comparisons, and train Aura's small preference model in-browser. Live mode adds NVIDIA Kimodo generation, constraint screening, downstream experiments, and Solana curation payouts.</p>
       </section>
       <JudgeDemoLab />
       <MotionCta judge />

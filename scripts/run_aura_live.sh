@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # Aura streamlined live launcher.
-# Text2Motion Aura is used as a Python generation engine; the Viser/Text2Motion Aura demo UI is not started.
+# NVIDIA Kimodo is used as the upstream Python generation engine; the standalone Kimodo/Viser demo UI is not started.
 # Run after activating the Python environment where Aura dependencies are installed.
 
 if [[ -n "${AURA_ROOT:-}" ]]; then
@@ -111,8 +111,8 @@ cd "$ROOT"
 echo "Project: $ROOT"
 echo "Conda env: ${CONDA_DEFAULT_ENV:-$CONDA_PREFIX}"
 echo "Text encoder: CPU"
-echo "Text2Motion Aura G1 generator: loaded lazily on GPU (CUDA or MPS) by Aura API"
-echo "Text2Motion Aura denoising steps: $AURA_TEXT2MOTION_STEPS"
+echo "NVIDIA Kimodo G1 generator: loaded lazily on GPU (CUDA or MPS) by Aura API"
+echo "NVIDIA Kimodo denoising steps: $AURA_TEXT2MOTION_STEPS"
 echo
 
 # 1) Heavy text encoder stays on CPU.
@@ -121,11 +121,11 @@ echo
   exec python -m text2motion_aura.scripts.run_text_encoder_server
 ) >"$LOG_DIR/textencoder.log" 2>&1 &
 PIDS+=("$!")
-if ! wait_port "Text2Motion Aura text encoder" "$TEXT_PORT" 600; then
+if ! wait_port "NVIDIA Kimodo text encoder" "$TEXT_PORT" 600; then
   tail -n 100 "$LOG_DIR/textencoder.log" || true; exit 1
 fi
 
-# 2) Aura API owns the persistent Text2Motion Aura G1 generation model.
+# 2) Aura API owns the persistent NVIDIA Kimodo G1 generation model.
 (
   cd "$ROOT"
   exec python aura_library_server.py
@@ -150,7 +150,7 @@ echo "Aura is ready:"
 echo "  Full Aura UI: http://localhost:$AURA_PORT"
 echo "  Aura API:     http://localhost:$LIBRARY_PORT"
 echo
-echo "The old Text2Motion Aura viewer is intentionally not started."
+echo "The standalone NVIDIA Kimodo/Viser viewer is intentionally not started."
 echo "The first Generate click may take longer because the G1 model is loaded lazily."
 echo "Logs: $LOG_DIR"
 echo "Press Ctrl+C to stop all services."

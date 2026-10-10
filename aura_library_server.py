@@ -1,6 +1,6 @@
 """Aura local development library API. Only binds to localhost; not for public deployment."""
 import json
-from aura_preference import connect, add_preference, list_preferences, latest, train, rank, next_pair
+from aura_preference import connect, add_preference, list_preferences, latest, train, rank, next_pair, preference_diagnostics
 from aura_g1_metrics import report_for_npz
 from aura_downstream_benchmark import list_cohorts, run_benchmark, latest_benchmark
 from aura_constraints import preset_payload, evaluate_candidates
@@ -8,6 +8,7 @@ from aura_bounties import (create_bounty, list_bounties, list_curations, curate,
     attach_post_signature, record_payment, close_bounty)
 from aura_text2motion_generator import AuraText2MotionGenerator, list_examples
 from aura_motion_prior import train_prior, status as prior_status
+from aura_reward_model import train_reward_model, status as reward_status
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -32,7 +33,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ('/preferences', '/train', '/prior/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
+        if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
             return self.send_error(404)
         try:
             size = int(self.headers.get('Content-Length', '0'))
@@ -59,12 +60,17 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 with connect(DB) as conn:
                     if path == '/preferences':
-                        out = add_preference(conn, BASE, body.get('left_id'), body.get('right_id'),
-                                             body.get('winner_id'), body.get('context', ''))
+                        out = add_preference(
+                            conn, BASE, body.get('left_id'), body.get('right_id'),
+                            body.get('winner_id'), body.get('context', ''), body.get('evaluator_id')
+                        )
+                        out['training_data'] = preference_diagnostics(conn, BASE)
                     elif path == '/train':
                         out = train(conn, BASE)
                     elif path == '/prior/train':
                         out = train_prior(conn, BASE)
+                    elif path == '/reward/train':
+                        out = train_reward_model(conn, BASE, epochs=body.get('epochs', 40))
                     elif path == '/bounties':
                         out = create_bounty(conn, body)
                     elif path == '/bounties/post-signature':
@@ -127,6 +133,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/prior':
             try:
                 return self.respond_json(200, prior_status(BASE))
+            except Exception as exc:
+                return self.respond_json(500, {'error': type(exc).__name__ + ': ' + str(exc)[:300]})
+        if path == '/reward':
+            try:
+                return self.respond_json(200, reward_status(BASE))
+            except Exception as exc:
+                return self.respond_json(500, {'error': type(exc).__name__ + ': ' + str(exc)[:300]})
+        if path == '/preferences/diagnostics':
+            try:
+                with connect(DB) as conn:
+                    return self.respond_json(200, preference_diagnostics(conn, BASE))
             except Exception as exc:
                 return self.respond_json(500, {'error': type(exc).__name__ + ': ' + str(exc)[:300]})
         if path in ('/preferences', '/critic', '/rankings', '/next-pair'):

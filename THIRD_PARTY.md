@@ -4,7 +4,7 @@ This file is a practical attribution summary, not legal advice. The authoritativ
 
 ## NVIDIA Kimodo
 
-`text2motion-aura/` is a vendored and modified copy of NVIDIA Kimodo used as the upstream generation engine behind Text2Motion Aura. The repository includes its `LICENSE` and `ATTRIBUTIONS.MD`. The Kimodo repository code is distributed under the license included there. Kimodo model weights are separately listed by NVIDIA under the NVIDIA Open Model License; review the model's Hugging Face/license page before commercial deployment.
+`text2motion-aura/` is the local compatibility path for a vendored and modified copy of NVIDIA Kimodo, which is Aura's upstream generation engine. The repository includes its `LICENSE` and `ATTRIBUTIONS.MD`. The Kimodo repository code is distributed under the license included there. Kimodo model weights are separately listed by NVIDIA under the NVIDIA Open Model License; review the model's Hugging Face/license page before commercial deployment.
 
 Aura modifications include automatic motion-library publishing, G1-native preview output, G1 default styling/branding integration, and UI theme changes.
 
@@ -33,4 +33,4 @@ The Aura frontend imports `@solana/web3.js` as a pinned npm dependency and Vite 
 
 ## Naming
 
-Aura exposes the generation subsystem as **Text2Motion Aura** in the repository, UI, launcher, Python integration layer, and generated-motion metadata. The original name **NVIDIA Kimodo** is retained only in this attribution context and in immutable upstream repository/model identifiers required to retrieve or identify third-party artifacts.
+Aura presents the upstream generator as **NVIDIA Kimodo** in user-facing documentation and UI. The `text2motion-aura` / `text2motion_aura` names remain only as internal compatibility paths/namespaces from an earlier integration rename. They do not imply that Aura authored or owns the Kimodo generation model.

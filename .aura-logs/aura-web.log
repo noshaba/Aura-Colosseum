@@ -3,33 +3,6 @@
 > vite --host 127.0.0.1 --port 5173 --strictPort
 
 
-  VITE v5.4.14  ready in 312 ms
+  VITE v5.4.14  ready in 219 ms
 
   ➜  Local:   http://127.0.0.1:5173/
-9:48:25 AM [vite] Pre-transform error: Transform failed with 1 error:
-/home/noshaba/Documents/Aura-Colosseum/aura-web/src/components/GeneratedG1RobotPreview.tsx:109:60: ERROR: Expected "}" but found "Aura"
-9:48:25 AM [vite] Internal server error: Transform failed with 1 error:
-/home/noshaba/Documents/Aura-Colosseum/aura-web/src/components/GeneratedG1RobotPreview.tsx:109:60: ERROR: Expected "}" but found "Aura"
-  Plugin: vite:esbuild
-  File: /home/noshaba/Documents/Aura-Colosseum/aura-web/src/components/GeneratedG1RobotPreview.tsx:109:60
-  
-  Expected "}" but found "Aura"
-  107|        const [w, qx, qy, qz] = parseVec(geom.getAttribute('quat'), 4)
-  108|        const pos = new THREE.Vector3(x, y, z).applyMatrix4(MUJOCO_TO_TEXT2MOTION_AURA)
-  109|        byFile.set(file, { pos, quat: mujocoQuatToText2Motion Aura([w, qx, qy, qz]) })
-     |                                                              ^
-  110|      })
-  111|      return byFile
-  
-      at failureErrorWithLog (/home/noshaba/Documents/Aura-Colosseum/aura-web/node_modules/esbuild/lib/main.js:1472:15)
-      at /home/noshaba/Documents/Aura-Colosseum/aura-web/node_modules/esbuild/lib/main.js:755:50
-      at responseCallbacks.<computed> (/home/noshaba/Documents/Aura-Colosseum/aura-web/node_modules/esbuild/lib/main.js:622:9)
-      at handleIncomingPacket (/home/noshaba/Documents/Aura-Colosseum/aura-web/node_modules/esbuild/lib/main.js:677:12)
-      at Socket.readFromStdout (/home/noshaba/Documents/Aura-Colosseum/aura-web/node_modules/esbuild/lib/main.js:600:7)
-      at Socket.emit (node:events:519:28)
-      at addChunk (node:internal/streams/readable:561:12)
-      at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
-      at Readable.push (node:internal/streams/readable:392:5)
-      at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
-9:48:25 AM [vite] Pre-transform error: Transform failed with 1 error:
-/home/noshaba/Documents/Aura-Colosseum/aura-web/src/components/GeneratedG1RobotPreview.tsx:109:60: ERROR: Expected "}" but found "Aura"

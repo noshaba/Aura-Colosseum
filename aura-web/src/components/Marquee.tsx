@@ -41,7 +41,7 @@ export function Marquee({ label, items }: Props) {
 }
 
 export const PIPELINE_ITEMS: Item[] = [
-  { label: 'Text2Motion Aura generation', icon: 'pair' },
+  { label: 'NVIDIA Kimodo generation', icon: 'pair' },
   { label: 'Native constraints', icon: 'arch' },
   { label: 'Human preferences', icon: 'bowl' },
   { label: 'Learned ranking', icon: 'flag' },

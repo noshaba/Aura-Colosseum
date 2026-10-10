@@ -6,7 +6,7 @@ The top Motion Studio interaction now treats human comparison as the primary out
 
 - Every prompt generates **at least two** G1 motion candidates.
 - The UI exposes a **2–6 candidate slider** (default: 2).
-- Candidates are generated sequentially with deterministic adjacent seeds so the loaded Text2Motion Aura model is reused without multiplying the peak CUDA batch size on 16 GB GPUs.
+- Candidates are generated sequentially with fresh per-batch seeds. Aura records each candidate seed and rejects duplicate NPZ hashes before admitting a candidate to the comparison, while reusing the loaded NVIDIA Kimodo model to keep peak VRAM manageable on 16 GB GPUs.
 - All candidates share a `batch_id`, exact prompt, and candidate index in their saved metadata.
 
 ## Loading stage

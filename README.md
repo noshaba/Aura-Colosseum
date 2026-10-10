@@ -1,6 +1,8 @@
 # Aura — Human-guided discovery for robot motion data
 
-Aura is a hackathon prototype for selecting useful synthetic humanoid motion data. Text2Motion Aura generates Unitree G1 candidates; Aura adds explicit kinematic constraints, human pairwise preferences, a learned selector, an equal-budget downstream benchmark, and Solana-backed curation payments/provenance.
+Aura is a hackathon prototype for selecting useful synthetic humanoid motion data. NVIDIA Kimodo generates Unitree G1 candidates; Aura adds explicit kinematic constraints, human pairwise preferences, a neural Aura Motion Reward Model, an interpretable selector baseline, an equal-budget downstream benchmark, and Solana-backed curation payments/provenance.
+
+**Upstream generation attribution:** motion generation is provided by NVIDIA Kimodo. The `text2motion-aura/` name is retained only as an internal compatibility namespace from an earlier integration rename; it is not presented as an Aura-authored generation model.
 
 ## Core claim
 
@@ -13,7 +15,7 @@ The code preserves negative results and hashes the evidence needed to reproduce 
 ## Product flow
 
 ```text
-Text2Motion Aura generation
+NVIDIA Kimodo generation
       ↓
 robot-native NPZ library
       ↓
@@ -21,7 +23,8 @@ explicit kinematic constraints
       ↓
 human A/B comparisons
       ↓
-small preference model
+Aura Motion Reward Model
+(temporal Transformer + pairwise reward loss)
       ↓
 ranked / selected demonstrations
       ↓
@@ -46,7 +49,7 @@ Review the CUDA/PyTorch compatibility notes in `INSTALL.md` before using the hel
 
 ### 1. Judge Mode — no GPU or Python server
 
-Judge Mode is a static interactive demo using **Text2Motion Aura's bundled G1 examples**. It lets a judge play motions, make pairwise choices, and train a small preference model locally in the browser.
+Judge Mode is a static interactive demo using **NVIDIA Kimodo's bundled G1 examples**. It lets a judge play motions, make pairwise choices, and train a small preference model locally in the browser.
 
 These examples are from different tasks and are **not experimental evidence**.
 
@@ -60,7 +63,7 @@ Open the Vite URL. You can also append `?judge=1` to any build.
 
 ### 2. Live Mode — real generation + experiment + curation market
 
-Prerequisites: a working Text2Motion Aura environment, NVIDIA GPU/CUDA for generation, Node/npm, and optionally Phantom or Solflare for devnet transactions.
+Prerequisites: a working NVIDIA Kimodo environment, NVIDIA GPU/CUDA for generation, Node/npm, and optionally Phantom or Solflare for devnet transactions.
 
 ```bash
 conda activate <your-aura-env>
@@ -71,7 +74,7 @@ cd text2motion-aura
 python -m pip install -e .
 ```
 
-Aura now uses Text2Motion Aura directly as a generation library; the standalone Text2Motion Aura/Viser viewer is not required. Use the helper launcher:
+Aura uses NVIDIA Kimodo directly as the upstream generation library; the standalone Kimodo/Viser viewer is not required. Use the helper launcher:
 
 ```bash
 ./scripts/run_live.sh
@@ -85,7 +88,7 @@ python aura_library_server.py             # Aura API + persistent/lazy G1 genera
 cd aura-web && npm run dev                # browser UI
 ```
 
-`aura_library_server.py` loads the Text2Motion Aura G1 motion model on the first Generate request and keeps it in memory for later generations. Set `AURA_TEXT2MOTION_STEPS` (default `30`) to change the streamlined generator's denoising-step count.
+`aura_library_server.py` loads the NVIDIA Kimodo G1 motion model on the first Generate request and keeps it in memory for later generations. Set `AURA_TEXT2MOTION_STEPS` (default `30`) to change the streamlined generator's denoising-step count.
 
 By default both browser and server use `https://api.devnet.solana.com`. If you use a custom devnet RPC, set both sides consistently before starting:
 
@@ -98,18 +101,32 @@ The browser submits signatures only; the Python coordinator independently fetche
 
 ## What is actually implemented
 
-- Aura-native prompt + example controls calling Text2Motion Aura directly, without embedding the full Text2Motion Aura viewer.
-- Automatic saving of Text2Motion Aura G1 generations as NPZ plus rotation-aware G1 preview, with newest output auto-playing in the main viewer.
+- Aura-native prompt + example controls calling NVIDIA Kimodo directly, without embedding the full NVIDIA Kimodo/Viser viewer.
+- Automatic saving of NVIDIA Kimodo G1 generations as NPZ plus rotation-aware G1 preview, with newest output auto-playing in the main viewer.
 - Preloaded AIST++ → Unitree G1 starter comparisons inside the main Motion-vs-Motion player so first-time visitors can rate immediately without GPU generation. Starter ratings are kept separate from generated-motion training data.
 - Reproducible G1 kinematic screening with report/file SHA-256 hashes.
 - Native task-constraint engine; no BioIK or AI4Animation dependency.
 - Persistent pairwise human comparisons in SQLite.
-- Regularized pairwise logistic preference model with grouped holdout handling.
+- **Aura Motion Reward Model:** compact temporal Transformer trained directly from same-prompt human A/B preferences with Bradley–Terry reward loss.
+- Regularized pairwise logistic preference model retained as an interpretable baseline with grouped holdout handling.
 - Active-pair suggestion and learned candidate ranking.
 - Selector-unseen downstream benchmark against repeated equal-budget random baselines.
 - Solana devnet memo attestations for preferences, screens, constraints, and benchmark reports.
 - **Curation market:** requester publishes hashed bounty terms; curators submit comparisons; accepted curations are paid in SOL; the transfer and curation evidence hash are recorded in the same transaction. The local coordinator independently verifies the posted terms and every claimed payout against Solana RPC before recording them.
 - Static Judge Mode requiring neither CUDA nor the Python API.
+
+
+## Aura Motion Reward Model and RLHF
+
+`aura_reward_model.py` is Aura's primary learned model. It consumes fixed-length G1 trajectory sequences containing root-relative joint positions, joint velocities, root velocity/height, and global joint rotations when available. A compact temporal Transformer produces one scalar reward per motion. Human A/B labels train it with the standard pairwise reward-model objective:
+
+```text
+P(A preferred to B) = sigmoid(r(A) - r(B))
+```
+
+This is accurately described as **human-preference reward modeling**, which is a core component of RLHF. The current prototype is **not full RLHF** because the NVIDIA Kimodo generator and robot policy are not updated with reinforcement learning against this reward. Full RLHF would add a trainable policy/generator plus an RL stage (for example in a physics simulator for a G1 control policy).
+
+The reward model runs CPU-first so it does not compete with the G1 generator for GPU memory. It becomes trainable after at least six valid unique generated-motion comparisons covering at least four distinct motion hashes. The UI hides learned scores while a person is voting and reveals the model ranking only after the human decision, reducing label bias.
 
 ## Curation market scope
 
@@ -148,7 +165,7 @@ aura_constraints.py       native G1 constraint checks
 aura_downstream_benchmark.py
 aura_g1_metrics.py
 aura_bounties.py          local bounty + curation ledger
-text2motion-aura/              vendored NVIDIA Text2Motion Aura source, modified for Aura integration
+text2motion-aura/              compatibility path for vendored NVIDIA Kimodo source used by Aura
 scripts/                  local run/test helpers
 ```
 
@@ -158,13 +175,13 @@ Aura's current automated measurements are kinematic proxies. They are not dynami
 
 ## Third-party software and assets
 
-See `THIRD_PARTY.md`. Text2Motion Aura's code and model weights/assets have separate licensing terms. Aura is an independent integration and is not an NVIDIA or Unitree product.
+See `THIRD_PARTY.md`. NVIDIA Kimodo's code and model weights/assets have separate licensing terms. Aura is an independent integration and is not an NVIDIA or Unitree product.
 
 ## What still requires the project owner
 
 The repository can supply the software, but it cannot manufacture external evidence. Before submission, the project owner should:
 
-- Run Text2Motion Aura on the working GPU and generate the real same-prompt cohort.
+- Run NVIDIA Kimodo on the working GPU and generate the real same-prompt cohort.
 - Obtain genuine human comparisons (preferably from multiple people).
 - Run the final frozen benchmark and keep the result even if it is negative.
 - Connect/fund devnet wallets and run at least one real bounty posting + curator payout end-to-end against devnet. The backend verification logic is implemented and tested with transaction fixtures, but the real wallet flow still needs your machine.
@@ -187,7 +204,7 @@ The live Motion Studio opens directly on a Motion-vs-Motion comparison using six
 
 The live generator produces 2–6 same-prompt G1 candidates per request. Before generation, visitors can immediately rate a six-motion AIST++ starter tournament in the same player. Once a batch is generated, Aura replaces the starter set with the generated motion-vs-motion tournament and stores those same-prompt choices in the real preference dataset. During generation, the centered player overlay reads **AURA IS GENERATING** over the retargeted loading animation.
 
-The live page has intentionally been simplified to the generation/comparison stage plus the Generated Motion Library. Constraint, discovery, benchmark, curation-market, and standalone AIST reference sections remain in the repository/backend where applicable but are no longer rendered below the primary live workflow.
+The Motion Studio stays focused on generation/comparison and the Generated Motion Library. The Solana curation market is available as its own top-level **Curation** page so the payment/provenance workflow remains visible without cluttering the primary motion workflow. Constraint, discovery, benchmark, and standalone AIST reference tools remain in the repository/backend where applicable.
 
 ## AMP-inspired learned motion prior
 
@@ -196,3 +213,11 @@ Aura includes an optional learned G1 motion prior in `aura_motion_prior.py`. It 
 The UI updates this prior opportunistically after new generated-motion preferences. Scores are shown as an additional learned signal beside the pairwise human-preference workflow. They are not a physical stability, task-success, collision, safety, or real-robot score.
 
 Full Adversarial Motion Priors would require a physics simulator and a trainable robot policy so the discriminator can provide a style reward during reinforcement learning. That remains a future validation layer rather than a hackathon claim.
+
+## Preference-data integrity
+
+Live generation now uses a fresh random seed for each batch unless you explicitly set `AURA_TEXT2MOTION_SEED` or send a seed in the generation request. Every candidate records its generation seed and NPZ SHA-256. If a generated NPZ duplicates an existing library motion, Aura discards it and retries with a new seed before presenting it for rating.
+
+Generated-motion preferences are also de-duplicated. The browser keeps a local evaluator ID, and the backend refuses a second vote from that evaluator on the same content pair. Training re-verifies the saved motion hashes and reports stored, valid, duplicate, rejected, unique-pair and unique-motion counts at `/preferences/diagnostics` and on the **Aura model** page.
+
+A skipped matchup is not written to the training dataset. This is intentional: ambiguous or uniformly bad candidates should not create a forced preference label.
