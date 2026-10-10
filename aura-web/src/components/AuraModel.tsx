@@ -264,71 +264,6 @@ export function AuraModel() {
         <p>A compact temporal Transformer learns a scalar reward directly from human A/B choices over G1 motion. Click through the layers, then inspect the live model trained on this machine.</p>
       </section>
 
-      <section className="aura-model-shell" aria-labelledby="aura-model-live-title">
-        <div className="aura-model-statusbar">
-          <div>
-            <span className={meta ? 'aura-model-dot is-active' : 'aura-model-dot'} aria-hidden="true" />
-            <div><strong id="aura-model-live-title">{meta ? 'Aura model active' : loading ? 'Checking Aura model…' : 'Aura model untrained'}</strong><small>{meta?.version ?? 'aura-motion-reward-transformer-v1'}</small></div>
-          </div>
-          <div className="aura-model-actions">
-            <button type="button" onClick={() => void refresh()} disabled={loading || training}>Refresh</button>
-            <button type="button" className="is-primary" onClick={() => void train()} disabled={training || Boolean(diagnostics && !diagnostics.reward_trainable)} title={diagnostics && !diagnostics.reward_trainable ? `Needs ${diagnostics.reward_min_comparisons} valid comparisons across ${diagnostics.reward_min_motions} motions` : undefined}>{training ? 'Training…' : meta ? 'Update model' : 'Train model'}</button>
-          </div>
-        </div>
-        {message && <p className="aura-model-message" role="status">{message}</p>}
-        {reward.error && !meta && <p className="aura-model-message is-muted">Live API unavailable: {reward.error}. The architecture below remains explorable.</p>}
-
-        <div className="aura-model-metrics">
-          <div><span>Valid comparisons</span><strong>{compact(diagnostics?.valid_comparison_count ?? meta?.total_comparison_count)}</strong><small>{diagnostics ? `${diagnostics.reward_min_comparisons} required to train` : 'Checking training data…'}</small></div>
-          <div><span>Unique motions</span><strong>{compact(diagnostics?.unique_motion_count ?? meta?.motion_count)}</strong><small>{diagnostics ? `${diagnostics.reward_min_motions} required · hash-deduplicated` : 'Generated G1 trajectories'}</small></div>
-          <div><span>Duplicate votes</span><strong>{compact(diagnostics?.duplicate_comparison_count ?? meta?.duplicate_comparison_count)}</strong><small>{diagnostics?.rejected_comparison_count ? `${diagnostics.rejected_comparison_count} additional rejected` : 'Duplicates do not train Aura'}</small></div>
-          <div><span>Held-out accuracy</span><strong>{pct(meta?.heldout_pair_accuracy)}</strong><small>{meta?.heldout_pair_count ? `${meta.heldout_pair_count} held-out comparisons` : 'Shown once enough unique pair groups exist'}</small></div>
-        </div>
-        {diagnostics && <div className={`aura-model-data-health ${diagnostics.reward_trainable ? 'is-ready' : ''}`}>
-          <strong>{diagnostics.reward_trainable ? 'Training data ready' : 'Training data not ready yet'}</strong>
-          <span>{diagnostics.stored_comparison_count} stored · {diagnostics.valid_comparison_count} valid · {diagnostics.unique_pair_count} unique pairs · {diagnostics.unique_motion_count} unique motions</span>
-          {(diagnostics.duplicate_comparison_count > 0 || diagnostics.rejected_comparison_count > 0) && <small>{diagnostics.duplicate_comparison_count} duplicate vote(s) and {diagnostics.rejected_comparison_count} rejected comparison(s) are excluded from training.</small>}
-        </div>}
-      </section>
-
-      <section className="aura-model-section" aria-labelledby="aura-model-architecture-title">
-        <div className="aura-model-section-head">
-          <div><span className="aura-model-kicker">Interactive architecture</span><h2 id="aura-model-architecture-title">Follow one motion through Aura.</h2></div>
-          <button type="button" className="aura-model-run" onClick={runForward} disabled={playing}>{playing ? 'Forward pass…' : 'Animate forward pass'}</button>
-        </div>
-
-        <div className="aura-model-explorer">
-          <div className="aura-model-pipeline" role="list" aria-label="Aura reward model layers">
-            {layers.map((layer, index) => (
-              <div className="aura-model-layer-wrap" key={layer.id}>
-                <button
-                  type="button"
-                  role="listitem"
-                  className={`aura-model-layer ${active === layer.id ? 'is-active' : ''} ${layer.learnable ? 'is-learned' : 'is-operation'}`}
-                  onClick={() => setActive(layer.id)}
-                  aria-pressed={active === layer.id}
-                >
-                  <span>{layer.eyebrow}</span>
-                  <strong>{layer.title}</strong>
-                  <small>{layer.shape}</small>
-                </button>
-                {index < layers.length - 1 && <span className={`aura-model-connector ${active === layers[index + 1].id && playing ? 'is-flowing' : ''}`} aria-hidden="true"><i /></span>}
-              </div>
-            ))}
-          </div>
-
-          <aside className="aura-model-layer-detail" aria-live="polite">
-            <div className="aura-model-detail-number">{selected.eyebrow.split(' · ')[0]}</div>
-            <span>{selected.learnable ? 'Learned layer' : 'Deterministic operation'}</span>
-            <h3>{selected.title}</h3>
-            <code>{selected.shape}</code>
-            <p>{selected.description}</p>
-            <p className="is-secondary">{selected.detail}</p>
-            <div className="aura-model-detail-foot"><span>{selected.learnable ? 'Weights update from human preferences' : 'No trainable parameters here'}</span></div>
-          </aside>
-        </div>
-      </section>
-
       <section className="aura-model-section aura-model-output" aria-labelledby="aura-model-output-title">
         <div className="aura-model-section-head aura-model-output-head">
           <div>
@@ -396,6 +331,72 @@ export function AuraModel() {
               <strong>No ranked motion outputs yet.</strong>
               <p>Train Aura and save at least one previewable G1 motion to turn this into an interactive 3D output browser.</p>
             </div>}
+          </aside>
+        </div>
+      </section>
+
+
+      <section className="aura-model-shell" aria-labelledby="aura-model-live-title">
+        <div className="aura-model-statusbar">
+          <div>
+            <span className={meta ? 'aura-model-dot is-active' : 'aura-model-dot'} aria-hidden="true" />
+            <div><strong id="aura-model-live-title">{meta ? 'Aura model active' : loading ? 'Checking Aura model…' : 'Aura model untrained'}</strong><small>{meta?.version ?? 'aura-motion-reward-transformer-v1'}</small></div>
+          </div>
+          <div className="aura-model-actions">
+            <button type="button" onClick={() => void refresh()} disabled={loading || training}>Refresh</button>
+            <button type="button" className="is-primary" onClick={() => void train()} disabled={training || Boolean(diagnostics && !diagnostics.reward_trainable)} title={diagnostics && !diagnostics.reward_trainable ? `Needs ${diagnostics.reward_min_comparisons} valid comparisons across ${diagnostics.reward_min_motions} motions` : undefined}>{training ? 'Training…' : meta ? 'Update model' : 'Train model'}</button>
+          </div>
+        </div>
+        {message && <p className="aura-model-message" role="status">{message}</p>}
+        {reward.error && !meta && <p className="aura-model-message is-muted">Live API unavailable: {reward.error}. The architecture below remains explorable.</p>}
+
+        <div className="aura-model-metrics">
+          <div><span>Valid comparisons</span><strong>{compact(diagnostics?.valid_comparison_count ?? meta?.total_comparison_count)}</strong><small>{diagnostics ? `${diagnostics.reward_min_comparisons} required to train` : 'Checking training data…'}</small></div>
+          <div><span>Unique motions</span><strong>{compact(diagnostics?.unique_motion_count ?? meta?.motion_count)}</strong><small>{diagnostics ? `${diagnostics.reward_min_motions} required · hash-deduplicated` : 'Generated G1 trajectories'}</small></div>
+          <div><span>Duplicate votes</span><strong>{compact(diagnostics?.duplicate_comparison_count ?? meta?.duplicate_comparison_count)}</strong><small>{diagnostics?.rejected_comparison_count ? `${diagnostics.rejected_comparison_count} additional rejected` : 'Duplicates do not train Aura'}</small></div>
+          <div><span>Held-out accuracy</span><strong>{pct(meta?.heldout_pair_accuracy)}</strong><small>{meta?.heldout_pair_count ? `${meta.heldout_pair_count} held-out comparisons` : 'Shown once enough unique pair groups exist'}</small></div>
+        </div>
+        {diagnostics && <div className={`aura-model-data-health ${diagnostics.reward_trainable ? 'is-ready' : ''}`}>
+          <strong>{diagnostics.reward_trainable ? 'Training data ready' : 'Training data not ready yet'}</strong>
+          <span>{diagnostics.stored_comparison_count} stored · {diagnostics.valid_comparison_count} valid · {diagnostics.unique_pair_count} unique pairs · {diagnostics.unique_motion_count} unique motions</span>
+          {(diagnostics.duplicate_comparison_count > 0 || diagnostics.rejected_comparison_count > 0) && <small>{diagnostics.duplicate_comparison_count} duplicate vote(s) and {diagnostics.rejected_comparison_count} rejected comparison(s) are excluded from training.</small>}
+        </div>}
+      </section>
+
+      <section className="aura-model-section" aria-labelledby="aura-model-architecture-title">
+        <div className="aura-model-section-head">
+          <div><span className="aura-model-kicker">Interactive architecture</span><h2 id="aura-model-architecture-title">Follow one motion through Aura.</h2></div>
+          <button type="button" className="aura-model-run" onClick={runForward} disabled={playing}>{playing ? 'Forward pass…' : 'Animate forward pass'}</button>
+        </div>
+
+        <div className="aura-model-explorer">
+          <div className="aura-model-pipeline" role="list" aria-label="Aura reward model layers">
+            {layers.map((layer, index) => (
+              <div className="aura-model-layer-wrap" key={layer.id}>
+                <button
+                  type="button"
+                  role="listitem"
+                  className={`aura-model-layer ${active === layer.id ? 'is-active' : ''} ${layer.learnable ? 'is-learned' : 'is-operation'}`}
+                  onClick={() => setActive(layer.id)}
+                  aria-pressed={active === layer.id}
+                >
+                  <span>{layer.eyebrow}</span>
+                  <strong>{layer.title}</strong>
+                  <small>{layer.shape}</small>
+                </button>
+                {index < layers.length - 1 && <span className={`aura-model-connector ${active === layers[index + 1].id && playing ? 'is-flowing' : ''}`} aria-hidden="true"><i /></span>}
+              </div>
+            ))}
+          </div>
+
+          <aside className="aura-model-layer-detail" aria-live="polite">
+            <div className="aura-model-detail-number">{selected.eyebrow.split(' · ')[0]}</div>
+            <span>{selected.learnable ? 'Learned layer' : 'Deterministic operation'}</span>
+            <h3>{selected.title}</h3>
+            <code>{selected.shape}</code>
+            <p>{selected.description}</p>
+            <p className="is-secondary">{selected.detail}</p>
+            <div className="aura-model-detail-foot"><span>{selected.learnable ? 'Weights update from human preferences' : 'No trainable parameters here'}</span></div>
           </aside>
         </div>
       </section>
