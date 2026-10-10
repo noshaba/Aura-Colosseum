@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CharacterPicker } from './CharacterPicker'
+import { GeneratedG1RobotPreview } from './GeneratedG1RobotPreview'
 import './aura-model.css'
 
 type RewardMeta = {
@@ -55,6 +57,18 @@ type TrainingDiagnostics = {
   reward_trainable: boolean
 }
 
+type Motion = {
+  id: string
+  name: string
+  model: string
+  created_at: string
+  frames: number
+  fps: number
+  native_file: string
+  preview_file: string | null
+  preview_error?: string | null
+}
+
 type LayerId = 'trajectory' | 'features' | 'projection' | 'position' | 'transformer' | 'pool' | 'head' | 'reward'
 
 type Layer = {
@@ -79,6 +93,8 @@ export function AuraModel() {
   const [reward, setReward] = useState<RewardState>({ model: null, scores: [] })
   const [loading, setLoading] = useState(true)
   const [diagnostics, setDiagnostics] = useState<TrainingDiagnostics | null>(null)
+  const [motions, setMotions] = useState<Motion[]>([])
+  const [selectedMotionId, setSelectedMotionId] = useState('')
   const [training, setTraining] = useState(false)
   const [message, setMessage] = useState('')
   const [active, setActive] = useState<LayerId>('transformer')
@@ -88,17 +104,35 @@ export function AuraModel() {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [rewardResponse, diagnosticsResponse] = await Promise.all([
+      const [rewardResponse, diagnosticsResponse, motionsResponse] = await Promise.all([
         fetch('/aura-api/reward', { cache: 'no-store' }),
         fetch('/aura-api/preferences/diagnostics', { cache: 'no-store' }),
+        fetch('/aura-api/motions', { cache: 'no-store' }),
       ])
       if (!rewardResponse.ok) throw new Error(`Aura API returned ${rewardResponse.status}`)
       const data = await rewardResponse.json() as RewardState
-      setReward({ model: data.model ?? null, scores: Array.isArray(data.scores) ? data.scores : [], error: data.error })
+      const scores = Array.isArray(data.scores) ? data.scores : []
+      setReward({ model: data.model ?? null, scores, error: data.error })
       if (diagnosticsResponse.ok) setDiagnostics(await diagnosticsResponse.json() as TrainingDiagnostics)
+      if (motionsResponse.ok) {
+        const motionData = await motionsResponse.json() as Motion[]
+        const library = Array.isArray(motionData) ? motionData : []
+        setMotions(library)
+        const previewable = library.filter(item => item.preview_file?.endsWith('.g1.json'))
+        setSelectedMotionId(previous => {
+          if (previous && previewable.some(item => item.id === previous)) return previous
+          const topScored = scores.find(item => previewable.some(motion => motion.id === item.id))?.id
+          return topScored ?? previewable[0]?.id ?? ''
+        })
+      } else {
+        setMotions([])
+        setSelectedMotionId('')
+      }
     } catch (error) {
       setReward({ model: null, scores: [], error: error instanceof Error ? error.message : 'Aura API unavailable' })
       setDiagnostics(null)
+      setMotions([])
+      setSelectedMotionId('')
     } finally {
       setLoading(false)
     }
@@ -160,11 +194,28 @@ export function AuraModel() {
     {
       id: 'reward', eyebrow: '08 · Model output', title: 'Aura reward', shape: 'r(motion)', learnable: false,
       description: 'The final scalar is Aura’s learned human-preference reward for a G1 trajectory.',
-      detail: 'It is not a calibrated probability, physical-safety score, or simulator task-success estimate. During training, the difference r(A) − r(B) is converted to a pairwise preference probability.'
+      detail: 'That score now drives the live 3D output browser below: you can inspect the actual saved motion, then retarget the same trajectory onto the Unitree G1 or the fairy body.'
     },
   ], [dims.blocks, dims.ff, dims.heads, dims.input, dims.model, dims.seq])
 
   const selected = layers.find(layer => layer.id === active) ?? layers[0]
+  const rewardById = useMemo(() => new Map(reward.scores.map(item => [item.id, item])), [reward.scores])
+  const motionById = useMemo(() => new Map(motions.map(item => [item.id, item])), [motions])
+  const previewableMotions = useMemo(() => motions.filter(item => item.preview_file?.endsWith('.g1.json')), [motions])
+  const rankedPreviewable = useMemo(() => {
+    const ranked = reward.scores.filter(item => motionById.get(item.id)?.preview_file?.endsWith('.g1.json'))
+    if (ranked.length) return ranked
+    return previewableMotions.map((motion, index) => ({
+      id: motion.id,
+      name: motion.name,
+      reward: 0,
+      rank: index + 1,
+      rank_percentile: previewableMotions.length <= 1 ? 1 : 1 - index / (previewableMotions.length - 1),
+    }))
+  }, [motionById, previewableMotions, reward.scores])
+
+  const selectedMotion = motionById.get(selectedMotionId) ?? previewableMotions[0] ?? null
+  const selectedScore = selectedMotion ? rewardById.get(selectedMotion.id) ?? null : null
 
   const runForward = () => {
     if (timer.current != null) window.clearTimeout(timer.current)
@@ -278,6 +329,77 @@ export function AuraModel() {
         </div>
       </section>
 
+      <section className="aura-model-section aura-model-output" aria-labelledby="aura-model-output-title">
+        <div className="aura-model-section-head aura-model-output-head">
+          <div>
+            <span className="aura-model-kicker">Live 3D output</span>
+            <h2 id="aura-model-output-title">Inspect Aura’s actual motion output.</h2>
+          </div>
+          <CharacterPicker className="aura-model-character-picker" />
+        </div>
+
+        <div className="aura-model-output-shell">
+          <div className="aura-model-output-player">
+            {selectedMotion?.preview_file ? (
+              <>
+                <div className="aura-model-output-meta">
+                  <div>
+                    <span>Selected motion</span>
+                    <strong>{selectedMotion.name}</strong>
+                  </div>
+                  <div>
+                    <span>Current Aura score</span>
+                    <strong>{selectedScore ? `${selectedScore.reward.toFixed(3)} · #${selectedScore.rank}` : 'Unscored'}</strong>
+                  </div>
+                </div>
+                <GeneratedG1RobotPreview key={`${selectedMotion.id}:${selectedMotion.preview_file}`} file={`/aura-api/files/${encodeURIComponent(selectedMotion.preview_file)}`} />
+              </>
+            ) : (
+              <div className="aura-model-output-empty">
+                <strong>No previewable G1 motion yet.</strong>
+                <p>Generate or save at least one G1 motion, then Aura can show its output here as a retargeted 3D character instead of only a score table.</p>
+              </div>
+            )}
+          </div>
+
+          <aside className="aura-model-output-sidebar">
+            <div className="aura-model-output-copy">
+              <strong>What you are seeing</strong>
+              <p>This panel renders the same saved G1 trajectory that Aura scores. Switch the character to view it as the native Unitree G1 body or as the retargeted fairy model.</p>
+              <small>The model output is not just a number anymore—you can inspect the actual motion bytes Aura is ranking.</small>
+            </div>
+
+            {rankedPreviewable.length ? <div className="aura-model-output-list" role="list" aria-label="Previewable saved motions">
+              {rankedPreviewable.slice(0, 10).map((item) => {
+                const motion = motionById.get(item.id)
+                if (!motion) return null
+                const isActive = motion.id === selectedMotion?.id
+                return (
+                  <button
+                    key={motion.id}
+                    type="button"
+                    role="listitem"
+                    className={`aura-model-output-item ${isActive ? 'is-active' : ''}`}
+                    onClick={() => setSelectedMotionId(motion.id)}
+                    aria-pressed={isActive}
+                  >
+                    <div>
+                      <span>{rewardById.has(motion.id) ? `Aura rank #${item.rank}` : 'Saved motion'}</span>
+                      <strong>{motion.name}</strong>
+                      <small>{motion.frames} frames · {motion.fps} fps · {new Date(motion.created_at).toLocaleString()}</small>
+                    </div>
+                    <b>{rewardById.has(motion.id) ? item.reward.toFixed(3) : '—'}</b>
+                  </button>
+                )
+              })}
+            </div> : <div className="aura-model-output-empty is-compact">
+              <strong>No ranked motion outputs yet.</strong>
+              <p>Train Aura and save at least one previewable G1 motion to turn this into an interactive 3D output browser.</p>
+            </div>}
+          </aside>
+        </div>
+      </section>
+
       <section className="aura-model-training" aria-labelledby="aura-model-training-title">
         <div className="aura-model-training-copy">
           <span className="aura-model-kicker">How human feedback trains it</span>
@@ -308,14 +430,15 @@ export function AuraModel() {
             <div><span>Latent width</span><strong>{dims.model}</strong><small>dimensions</small></div>
           </div>
 
-          <div className="aura-model-ranking-head"><h3>Current motion ranking</h3><span>Raw reward is comparative, not a calibrated probability.</span></div>
+          <div className="aura-model-ranking-head"><h3>Current motion ranking</h3><span>Raw reward is comparative, not a calibrated probability. Click a row to open that motion in the 3D viewer above.</span></div>
           {reward.scores.length ? <div className="aura-model-ranking">
             {reward.scores.slice(0, 12).map((score) => {
               const maxAbs = Math.max(1, ...reward.scores.map(item => Math.abs(item.reward)))
               const normalized = Math.max(6, Math.min(100, 50 + (score.reward / maxAbs) * 46))
-              return <div className="aura-model-rank-row" key={score.id}>
+              const canPreview = motionById.get(score.id)?.preview_file?.endsWith('.g1.json')
+              return <button type="button" className={`aura-model-rank-row ${canPreview ? 'is-clickable' : ''}`} key={score.id} onClick={() => { if (canPreview) setSelectedMotionId(score.id) }} disabled={!canPreview}>
                 <b>#{score.rank}</b><div><span>{score.name || score.id}</span><i><em style={{ width: `${normalized}%` }} /></i></div><strong>{score.reward.toFixed(3)}</strong>
-              </div>
+              </button>
             })}
           </div> : <p className="aura-model-empty">The model is trained, but there are no currently scorable library motions.</p>}
 
