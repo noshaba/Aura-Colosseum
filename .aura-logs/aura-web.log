@@ -1,8 +1,0 @@
-
-> aura-robot-data-discovery@0.10.2 dev
-> vite --host 127.0.0.1 --port 5173 --strictPort
-
-
-  VITE v5.4.14  ready in 219 ms
-
-  ➜  Local:   http://127.0.0.1:5173/
