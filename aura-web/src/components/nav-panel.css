@@ -36,3 +36,35 @@
   background: var(--fx-sunset, #f2cc8f);
   border-color: var(--fx-sunset, #f2cc8f);
 }
+
+/* Hover / keyboard focus: the pill brightens, lifts, nudges toward the page and shows an
+   arrow. `html .fx-nav__panel` outranks hero-arena.css's `html .fx-nav__pill` transition
+   list; the 0s delay keeps hover instant despite the drop-in stagger delays above. */
+html .fx-nav__panel .fx-nav__pill {
+  position: relative;
+  transition: color .25s var(--ha-ease), background-color .25s ease, box-shadow .25s ease, transform .25s var(--ha-ease),
+    opacity .3s var(--fx-ease-nav), translate .3s var(--fx-ease-nav);
+}
+html .fx-nav__panel .fx-nav__pill:is(:hover, :focus-visible) { transition-delay: 0s; transform: translateX(-6px); }
+.fx-nav__panel .fx-nav__pill:not(.fx-nav__cta):is(:hover, :focus-visible),
+.fx-nav.is-scrolled .fx-nav__panel .fx-nav__pill:not(.fx-nav__cta):is(:hover, :focus-visible) {
+  background: rgba(250, 248, 238, .96);
+  color: var(--fx-ink);
+  box-shadow: 0 0 0 1px var(--fx-ink-10), 0 10px 24px -14px rgba(61, 64, 91, .45);
+}
+.fx-nav__panel .fx-nav__pill:not(.fx-nav__cta)::after {
+  content: "→"; position: absolute; right: 26px; top: 50%;
+  opacity: 0; transform: translate(-6px, -50%); transition: opacity .2s ease, transform .25s var(--ha-ease);
+  color: var(--fx-terra); font-size: 17px;
+}
+.fx-nav__panel .fx-nav__pill:not(.fx-nav__cta):is(:hover, :focus-visible)::after { opacity: 1; transform: translate(0, -50%); }
+/* Dark-background pills: a brighter navy glass instead of eggshell. */
+.fx-nav__panel .fx-nav__pill:not(.fx-nav__cta):is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]):is(:hover, :focus-visible) {
+  background: rgba(69, 72, 95, .92); color: var(--fx-sunset, #f2cc8f);
+  box-shadow: 0 0 0 1px var(--fx-cream-20, rgba(244, 241, 222, .2)), 0 10px 24px -14px rgba(0, 0, 0, .5);
+}
+.fx-nav__panel .fx-nav__pill.fx-nav__cta:is(:hover, :focus-visible) { box-shadow: 0 10px 24px -14px rgba(61, 64, 91, .6); }
+@media (prefers-reduced-motion: reduce) {
+  html .fx-nav__panel .fx-nav__pill:is(:hover, :focus-visible) { transform: none; }
+  .fx-nav__panel .fx-nav__pill::after { transition: none; }
+}

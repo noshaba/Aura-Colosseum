@@ -245,6 +245,8 @@ body {
 }
 .fx-hero__asset { margin: 80px var(--fx-gutter) 0; }
 .fx-section { margin: var(--fx-section-gap) var(--fx-inset) 0; }
+/* Right under the arena hero (the intro block was removed): a tighter lead-in. */
+.hero-arena + .fx-section { margin-top: clamp(64px, 8vw, 120px); }
 
 /* --------------------------------------------------------------------------
    Marquee ("trusted by" row)
