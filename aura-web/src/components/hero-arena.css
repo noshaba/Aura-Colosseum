@@ -148,97 +148,180 @@ html[data-hero-tone-a="dark"][data-hero-tone-b="dark"] .fx-nav:not(.is-open) .fx
    Unified live generation controls. The top arena is now the generator + rater;
    the old lower generator panel is not rendered by MotionStudio.
    -------------------------------------------------------------------------- */
+/* Pedestal look (see heroArenaScene buildLane): rim ring = outer frame, lit top face = inner panel,
+   tapered side band = the meta row underneath, 2px ink outline + tight lower-right ground shadow.
+   Cream scheme by default; dark set follows data-tone-mid like the other DOM controls. */
+.hero-arena { --gp-rim: #d7c79e; --gp-disc: #e0daca; --gp-ink: #3d405b; --gp-well: #f4f1de; --gp-paper: #f4f1de;
+  --gp-band: linear-gradient(90deg, #d2c4b1 0%, #d9cebb 35%, #d6cab7 60%, #b8a286 100%);
+  --gp-shadow: rgba(29, 31, 51, .3); }
+.hero-arena[data-tone-mid="dark"] { --gp-rim: #ccb686; --gp-disc: #80767c; --gp-ink: #f4f1de; --gp-well: #8f868c; --gp-paper: #3d405b;
+  --gp-band: linear-gradient(90deg, #5a4e55 0%, #6a5d67 35%, #5f5258 65%, #4e4145 100%);
+  --gp-shadow: rgba(29, 31, 51, .25); }
 .hero-arena__generator {
   position: absolute;
   z-index: 6;
-  top: 104px;
+  /* Sits directly under the canvas question, just above the vote bar (16px + 44px + 12px). */
+  bottom: 72px;
   left: 50%;
   width: min(920px, calc(100% - 112px));
   transform: translateX(-50%);
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--fx-ink) 14%, transparent);
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--fx-cream) 88%, transparent);
-  backdrop-filter: blur(18px) saturate(1.1);
-  box-shadow: 0 18px 50px rgba(31, 35, 43, .10);
-  color: var(--fx-ink);
+  color: var(--gp-ink);
   pointer-events: auto;
+  /* 2px ink outline around face + band, then the ground shadow */
+  filter:
+    drop-shadow(2px 0 0 var(--gp-ink)) drop-shadow(-2px 0 0 var(--gp-ink))
+    drop-shadow(0 2px 0 var(--gp-ink)) drop-shadow(0 -2px 0 var(--gp-ink))
+    drop-shadow(12px 8px 6px var(--gp-shadow));
 }
 .hero-arena__generator-main {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
+  padding: 10px 14px;
+  border: 11px solid var(--gp-rim);
+  border-radius: 32px;
+  background: var(--gp-disc);
 }
+.hero-arena__generator-main::after { /* progress track on the rim, fills while generating */
+  content: "";
+  position: absolute;
+  left: 14px; right: 14px; bottom: -7px;
+  height: 2px;
+  background: color-mix(in srgb, var(--gp-ink) 12%, transparent);
+  border-radius: 2px;
+}
+.hero-arena__generator.is-generating .hero-arena__generator-main::after {
+  background: linear-gradient(var(--gp-ink), var(--gp-ink)) left / 0% 100% no-repeat,
+    color-mix(in srgb, var(--gp-ink) 12%, transparent);
+  animation: gp-progress 2.4s ease-in-out infinite;
+}
+@keyframes gp-progress { 0% { background-size: 0% 100%; } 100% { background-size: 100% 100%; } }
 .hero-arena__generator-main label,
 .hero-arena__generator-meta label {
-  font-family: var(--fx-mono);
-  font-size: 9px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--fx-ink-64);
+  font-family: var(--fx-font, 'Figtree', Arial, sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gp-ink);
 }
 .hero-arena__generator-main input[type="text"] {
   min-width: 0;
   height: 42px;
-  padding: 0 14px;
-  border: 1px solid var(--fx-ink-10);
+  padding: 0 16px;
+  border: 2px solid color-mix(in srgb, var(--gp-ink) 16%, transparent);
   border-radius: 999px;
-  background: rgba(255, 255, 255, .72);
-  color: var(--fx-ink);
+  background: var(--gp-well);
+  color: #3d405b;
   font-size: 14px;
   outline: none;
 }
-.hero-arena__generator-main input[type="text"]:focus {
-  border-color: var(--fx-sage);
-  box-shadow: 0 0 0 3px rgba(129, 178, 154, .16);
+.hero-arena__generator-main input[type="text"]::placeholder { color: color-mix(in srgb, #3d405b 62%, transparent); }
+.hero-arena__generator-main input[type="text"]:focus-visible {
+  border-color: #3d405b;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #81b29a 55%, transparent);
 }
-.hero-arena__generator-main > button,
-.hero-arena__starter-button {
-  min-height: 42px;
-  padding: 0 16px;
+/* Generate button = a mini pedestal: cream face, sandy rim, shaded side band, ink outline, ground shadow. */
+.hero-arena__generator-main > button {
+  --gp-lift: 0px;
+  position: relative;
+  isolation: isolate;
+  min-height: 44px;
+  min-width: 44px;
+  margin-bottom: 7px;
+  padding: 0 25px;
   border: 0;
   border-radius: 999px;
-  background: var(--fx-navy);
-  color: var(--fx-eggshell);
-  font-family: var(--fx-mono);
-  font-size: 10px;
-  letter-spacing: .05em;
-  text-transform: uppercase;
+  background: transparent;
+  color: var(--gp-ink);
+  font-family: var(--fx-font, 'Figtree', Arial, sans-serif);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
   cursor: pointer;
+  filter:
+    drop-shadow(2px 0 0 var(--gp-ink)) drop-shadow(-2px 0 0 var(--gp-ink))
+    drop-shadow(0 2px 0 var(--gp-ink)) drop-shadow(0 -2px 0 var(--gp-ink))
+    drop-shadow(4px 4px 2px var(--gp-shadow));
+  transition: transform .14s ease-out;
 }
-.hero-arena__generator-main > button:disabled,
+.hero-arena__generator-main > button::before { /* side band, tapered, tucked under the face */
+  content: "";
+  position: absolute;
+  z-index: -2;
+  left: -3px; right: -3px; top: 45%; bottom: -7px;
+  border-radius: 0 0 999px 999px;
+  background: var(--gp-band);
+  clip-path: polygon(3px 0, calc(100% - 3px) 0, 100% 100%, 0 100%);
+  transform: translateY(var(--gp-lift));
+  transition: transform .14s ease-out;
+}
+.hero-arena__generator-main > button::after { /* top face + sandy rim */
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  box-sizing: border-box;
+  border: 5px solid var(--gp-rim);
+  border-radius: 999px;
+  background: var(--gp-disc);
+}
+.hero-arena__generator-main > button:hover:not(:disabled) { transform: translateY(-2px); --gp-lift: 2px; }
+.hero-arena__generator-main > button:active:not(:disabled) { transform: translateY(4px); --gp-lift: -4px; transition-duration: .05s; }
+.hero-arena__generator-main > button:disabled { opacity: .7; color: color-mix(in srgb, var(--gp-ink) 70%, transparent); cursor: default; }
+.hero-arena__generator-main > button:disabled::before { filter: saturate(.6); }
+.hero-arena__generator.is-generating .hero-arena__generator-main > button:disabled { opacity: .85; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-arena__generator-main > button, .hero-arena__generator-main > button::before { transition: none; }
+}
+.hero-arena__starter-button {
+  min-height: 30px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+  font-family: var(--fx-font, 'Figtree', Arial, sans-serif); font-size: 13px; font-weight: 700;
+}
+.hero-arena__generator-main > button:focus-visible { outline: 3px solid #81b29a; outline-offset: 5px; }
+.hero-arena__starter-button:focus-visible { outline: 3px solid #81b29a; outline-offset: 2px; }
 .hero-arena__starter-button:disabled { opacity: .5; cursor: default; }
+/* The pedestal's tapered side band, tucked under the face. */
 .hero-arena__generator-meta {
-  display: grid;
-  grid-template-columns: auto minmax(120px, 220px) auto auto;
+  position: relative;
+  z-index: 0;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-top: 9px;
-  padding: 0 4px;
+  justify-content: center;
+  gap: 4px 22px;
+  margin: -24px 0 0;
+  padding: 30px 18px 8px;
+  min-height: 58px;
+  border-radius: 0 0 28px 28px;
+  background: var(--gp-band);
+  clip-path: polygon(0 0, 100% 0, calc(100% + 6px) 100%, -6px 100%);
 }
 .hero-arena__generator-meta label { display: flex; gap: 6px; align-items: center; }
 .hero-arena__generator-meta label strong { color: var(--fx-ink); font-size: 11px; }
 .hero-arena__generator-meta input[type="range"] { width: 100%; accent-color: var(--fx-sage); }
 .hero-arena__generator-meta > span {
-  font-family: var(--fx-mono);
-  font-size: 8px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--fx-ink-40);
+  font-family: var(--fx-font, 'Figtree', Arial, sans-serif);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--gp-ink);
   white-space: nowrap;
 }
-.hero-arena__generator-meta > span.is-ready { color: #4d7a68; }
-.hero-arena__starter-button { min-height: 30px; padding: 0 11px; background: transparent; color: var(--fx-ink); border: 1px solid var(--fx-ink-10); }
+.hero-arena__generator-meta > span.is-ready { color: var(--gp-ink); }
+.hero-arena__starter-button { min-height: 30px; padding: 0 12px; background: transparent; color: var(--gp-ink); border: 2px solid var(--gp-ink); }
 .hero-arena__generator-message {
-  margin-top: 9px;
-  padding: 8px 10px 2px;
-  border-top: 1px solid var(--fx-ink-10);
-  font-size: 11px;
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: var(--gp-disc);
+  font-size: 12px;
   line-height: 1.45;
-  color: var(--fx-ink-64);
+  color: var(--gp-ink);
 }
-.hero-arena__generator-message.is-error { color: #a33e33; }
+.hero-arena__generator-message.is-error { color: #8f2f25; }
 .hero-arena__generating {
   position: absolute;
   z-index: 5;
@@ -261,9 +344,9 @@ html[data-hero-tone-a="dark"][data-hero-tone-b="dark"] .fx-nav:not(.is-open) .fx
   position: absolute;
   z-index: 4;
   left: 50%;
-  bottom: 74px;
+  top: 108px;
   transform: translateX(-50%);
-  max-width: min(720px, calc(100% - 180px));
+  max-width: min(420px, calc(100% - 560px));
   padding: 8px 13px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--fx-cream) 78%, transparent);
@@ -277,12 +360,12 @@ html[data-hero-tone-a="dark"][data-hero-tone-b="dark"] .fx-nav:not(.is-open) .fx
 .hero-arena__source small { display: block; margin-top: 2px; font-size: 8px; color: var(--fx-ink-40); }
 
 @media (max-width: 767px) {
-  .hero-arena__generator { top: 86px; width: calc(100% - 24px); padding: 10px; border-radius: 18px; }
-  .hero-arena__generator-main { grid-template-columns: 1fr auto; }
+  .hero-arena__generator { bottom: 66px; width: calc(100% - 32px); }
+  .hero-arena__generator-main { grid-template-columns: 1fr auto; padding: 8px 8px; border-width: 9px; border-radius: 26px; gap: 8px; }
+  .hero-arena__generator-meta { padding: 28px 12px 8px; gap: 2px 14px; }
+  .hero-arena__generator-meta > span { font-size: 13px; }
   .hero-arena__generator-main label { grid-column: 1 / -1; }
   .hero-arena__generator-main input[type="text"] { height: 40px; }
-  .hero-arena__generator-meta { grid-template-columns: auto 1fr; }
-  .hero-arena__generator-meta > span { grid-column: 1 / -1; }
   .hero-arena__starter-button { justify-self: start; }
-  .hero-arena__source { bottom: 68px; max-width: calc(100% - 100px); }
+  .hero-arena__source { display: none; }
 }

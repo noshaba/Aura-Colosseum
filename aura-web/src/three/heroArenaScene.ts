@@ -920,6 +920,14 @@ export class HeroArenaScene {
   }
 
   /** Keyboard focus (or mouse hover) of the DOM A/B buttons: rim highlight + dark scheme. */
+  /** Height (CSS px) of a DOM block stacked between the question and the vote bar (the generator box); the scene refits around it. */
+  setBottomInset(px: number) {
+    const v = Math.max(0, Math.round(px))
+    if (v === this.bottomInsetPx) return
+    this.bottomInsetPx = v
+    if (!this.disposed) this.resize()
+  }
+  private bottomInsetPx = 0
   setFocusSide(side: Side | null) { this.focused = side; this.dirty = true; this.syncTone() }
 
   /** Brief navy flash on one half (a key vote is about to register). */
@@ -1141,7 +1149,7 @@ export class HeroArenaScene {
     // question line(s) + the "Press A or B" hint line with keycaps (see drawHud)
     const blockPx = (q.lines * q.size * 1.18 + q.hint * 1.6) * k
     const controlsPx = compact ? 12 + 44 : 16 + 44 // .hero-arena__controls: bottom offset + 44px bar (measured)
-    return { compact, widthPx, blockPx, bottomPx: controlsPx + 16 }
+    return { compact, widthPx, blockPx, bottomPx: controlsPx + 16 + this.bottomInsetPx }
   }
 
   /** With the current camera fit: would an A/B badge come within 16px of a top HUD panel's column? */
