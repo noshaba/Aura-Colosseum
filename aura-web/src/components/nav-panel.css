@@ -1,0 +1,38 @@
+/* Nav dropdown (Header.tsx): equal-width pills, and a dark variant for pills over a
+   dark background. Header.tsx sets data-bg="dark" from the colour behind each pill;
+   over the home hero, HeroArena tags pills with data-hero-side instead, because its
+   halves are a canvas/gradient that can't be sampled. */
+
+/* The wallet pill alone sets the panel width; the other pills match it. width:0 keeps
+   them out of the panel's shrink-to-fit width, then min-width:100% fills it. */
+.fx-nav__panel { align-items: stretch; }
+.fx-nav__panel > .fx-nav__pill:not(.fx-nav__cta) { width: 0; min-width: 100%; }
+.fx-nav__pill { justify-content: flex-start; }
+.fx-nav__pill.fx-nav__cta { gap: 10px; }
+/* Wallet is now the 5th pill; continue the drop-in stagger. */
+.fx-nav__panel > .fx-nav__pill:nth-child(4) { transition-delay: .15s; }
+.fx-nav__panel > .fx-nav__pill:nth-child(5) { transition-delay: .2s; }
+
+/* Dark background: navy glass with eggshell text (the burger's dark look), and the
+   wallet pill inverts to eggshell so it still reads as the primary action. */
+.fx-nav__pill:not(.fx-nav__cta):is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]),
+.fx-nav.is-scrolled .fx-nav__pill:not(.fx-nav__cta):is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]) {
+  background: rgba(52, 55, 78, .78); /* --fx-tone-800 */
+  box-shadow: 0 0 0 1px var(--fx-cream-20, rgba(244, 241, 222, .2));
+  color: var(--fx-eggshell, #f4f1de);
+}
+.fx-nav__link:is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]):hover {
+  color: var(--fx-sunset, #f2cc8f);
+}
+.fx-nav__link:is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]):focus-visible {
+  outline-color: var(--fx-eggshell, #f4f1de);
+}
+.fx-nav__pill.fx-nav__cta:is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]) {
+  background: var(--fx-eggshell, #f4f1de);
+  border-color: var(--fx-eggshell, #f4f1de);
+  color: var(--fx-navy, #3d405b);
+}
+.fx-nav__pill.fx-nav__cta:is([data-bg="dark"], html[data-hero-tone-a="dark"] [data-hero-side="a"], html[data-hero-tone-b="dark"] [data-hero-side="b"]):hover:not(:disabled) {
+  background: var(--fx-sunset, #f2cc8f);
+  border-color: var(--fx-sunset, #f2cc8f);
+}

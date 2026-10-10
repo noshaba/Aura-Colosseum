@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CharacterPicker } from './CharacterPicker'
 import { GeneratedG1RobotPreview } from './GeneratedG1RobotPreview'
+import type { AuraModelVizLabel } from './AuraModelViz'
+import { ExplorerModelGame, HeroModelGame } from './AuraModelGame'
+import { useGamePool, useGameStats, type GamePoolItem } from './auraModelGameState'
 import './aura-model.css'
 
 type RewardMeta = {
@@ -146,14 +149,13 @@ export function AuraModel() {
   useEffect(() => () => { if (timer.current != null) window.clearTimeout(timer.current) }, [])
 
   const meta = reward.model
-  const dims = {
-    seq: meta?.sequence_length ?? 64,
-    input: meta?.input_dim ?? 413,
-    model: meta?.architecture?.d_model ?? 96,
-    heads: meta?.architecture?.heads ?? 4,
-    blocks: meta?.architecture?.layers ?? 2,
-    ff: meta?.architecture?.feedforward ?? 192,
-  }
+  const dimSeq = meta?.sequence_length ?? 64
+  const dimInput = meta?.input_dim ?? 413
+  const dimModel = meta?.architecture?.d_model ?? 96
+  const dimHeads = meta?.architecture?.heads ?? 4
+  const dimBlocks = meta?.architecture?.layers ?? 2
+  const dimFf = meta?.architecture?.feedforward ?? 192
+  const dims = useMemo(() => ({ seq: dimSeq, input: dimInput, model: dimModel, heads: dimHeads, blocks: dimBlocks, ff: dimFf }), [dimSeq, dimInput, dimModel, dimHeads, dimBlocks, dimFf])
 
   const layers = useMemo<Layer[]>(() => [
     {
@@ -217,6 +219,37 @@ export function AuraModel() {
   const selectedMotion = motionById.get(selectedMotionId) ?? previewableMotions[0] ?? null
   const selectedScore = selectedMotion ? rewardById.get(selectedMotion.id) ?? null : null
 
+  // Feed-the-model game: real Aura scores when a trained model has scored previewable motions, else demo samples.
+  const game = useGameStats()
+  const realPool = useMemo<GamePoolItem[]>(() => {
+    if (!meta) return []
+    const n = reward.scores.length
+    return reward.scores.flatMap(item => {
+      const file = motionById.get(item.id)?.preview_file
+      if (!file?.endsWith('.g1.json')) return []
+      const norm = item.rank_percentile ?? (n <= 1 ? 1 : 1 - (item.rank - 1) / (n - 1))
+      return [{ id: item.id, name: item.name || motionById.get(item.id)?.name || item.id, file: `/aura-api/files/${encodeURIComponent(file)}`, score: item.reward, norm, demo: false }]
+    })
+  }, [meta, reward.scores, motionById])
+  const gamePool = useGamePool(realPool)
+  const [celebrate, setCelebrate] = useState<{ key: number; id: LayerId; title: string } | null>(null)
+  const selectLayer = (id: LayerId) => {
+    setActive(id)
+    if (game.unlock(id)) setCelebrate(prev => ({ key: (prev?.key ?? 0) + 1, id, title: layers.find(l => l.id === id)?.title ?? id }))
+  }
+  const vizLabels = useMemo<AuraModelVizLabel[]>(() => layers.map(l => ({ id: l.id, number: l.eyebrow.split(' · ')[0], title: l.title, learnable: l.learnable, shape: l.shape, blurb: l.description })), [layers])
+  const vizDescription = `3D diagram of the Aura reward model: a ${dims.seq}-frame G1 motion becomes ${dims.seq} × ${dims.input} trajectory features, a learned projection to ${dims.model} dimensions, a learned positional embedding, ${dims.blocks} Transformer block${dims.blocks === 1 ? '' : 's'} with ${dims.heads} attention heads, temporal mean pooling, a ${dims.model} → 64 → 1 reward MLP, and one scalar reward.`
+
+  // Subtle card transition when the selected layer changes (skipped under reduced motion).
+  const detailRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = detailRef.current
+    if (!el || typeof el.animate !== 'function' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    // starts with the 3D camera glide (~1.05 s) and lands as it settles
+    const anim = el.animate([{ opacity: 0.4, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 600, delay: 320, easing: 'cubic-bezier(.65,0,.35,1)', fill: 'backwards' })
+    return () => anim.cancel()
+  }, [active])
+
   const runForward = () => {
     if (timer.current != null) window.clearTimeout(timer.current)
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -230,7 +263,7 @@ export function AuraModel() {
         timer.current = window.setTimeout(() => setPlaying(false), 550)
         return
       }
-      timer.current = window.setTimeout(step, 520)
+      timer.current = window.setTimeout(step, 1000) // time for the 3D camera to zoom onto each stage
     }
     step()
   }
@@ -259,9 +292,11 @@ export function AuraModel() {
   return (
     <main className="fx-page aura-model-page">
       <section className="aura-model-hero">
-        <span className="aura-model-kicker">Human-preference reward model</span>
-        <h1 className="fx-h1">Look inside<br />the Aura model.</h1>
-        <p>A compact temporal Transformer learns a scalar reward directly from human A/B choices over G1 motion. Click through the layers, then inspect the live model trained on this machine.</p>
+        <HeroModelGame dims={dims} labels={vizLabels} description={vizDescription} pool={gamePool} api={game}>
+          <span className="aura-model-kicker">Human-preference reward model</span>
+          <h1 className="fx-h1">Look inside<br />the Aura model.</h1>
+          <p>A compact temporal Transformer learns a scalar reward directly from human A/B choices over G1 motion. Click through the layers, then inspect the live model trained on this machine.</p>
+        </HeroModelGame>
       </section>
 
       <section className="aura-model-section aura-model-output" aria-labelledby="aura-model-output-title">
@@ -370,26 +405,29 @@ export function AuraModel() {
         </div>
 
         <div className="aura-model-explorer">
-          <div className="aura-model-pipeline" role="list" aria-label="Aura reward model layers">
-            {layers.map((layer, index) => (
-              <div className="aura-model-layer-wrap" key={layer.id}>
+          <div className="aura-model-pipeline">
+            <ExplorerModelGame dims={dims} labels={vizLabels} description={vizDescription} pool={gamePool} api={game}
+              active={active} playing={playing} onSelect={selectLayer} onStage={setActive} celebrate={celebrate}>
+            <div className="aura-model-layer-chips" role="list" aria-label="Aura reward model layers">
+              {layers.map(layer => (
                 <button
+                  key={layer.id}
                   type="button"
                   role="listitem"
-                  className={`aura-model-layer ${active === layer.id ? 'is-active' : ''} ${layer.learnable ? 'is-learned' : 'is-operation'}`}
-                  onClick={() => setActive(layer.id)}
+                  className={`aura-model-layer-chip ${active === layer.id ? 'is-active' : ''} ${layer.learnable ? 'is-learned' : 'is-operation'}`}
+                  onClick={() => selectLayer(layer.id)}
                   aria-pressed={active === layer.id}
+                  title={`${layer.eyebrow} · ${layer.shape}`}
                 >
-                  <span>{layer.eyebrow}</span>
-                  <strong>{layer.title}</strong>
-                  <small>{layer.shape}</small>
+                  <span>{layer.eyebrow.split(' · ')[0]}</span>{layer.title}
+                  {game.stats.codex.includes(layer.id) && <i className="aura-model-chip-seen" aria-label="unlocked">✦</i>}
                 </button>
-                {index < layers.length - 1 && <span className={`aura-model-connector ${active === layers[index + 1].id && playing ? 'is-flowing' : ''}`} aria-hidden="true"><i /></span>}
-              </div>
-            ))}
+              ))}
+            </div>
+            </ExplorerModelGame>
           </div>
 
-          <aside className="aura-model-layer-detail" aria-live="polite">
+          <aside className="aura-model-layer-detail" aria-live="polite" ref={detailRef}>
             <div className="aura-model-detail-number">{selected.eyebrow.split(' · ')[0]}</div>
             <span>{selected.learnable ? 'Learned layer' : 'Deterministic operation'}</span>
             <h3>{selected.title}</h3>

@@ -1,11 +1,15 @@
 import type { Page } from '../types'
+import { OpenWorldBackdrop } from './OpenWorldBackdrop'
 
-type Props = { onPage: (page: Page) => void; onWallet: () => void }
+/** `world`: draw the open world behind the footer. The homepage passes false: its closing
+ *  section's world already extends under the footer. */
+type Props = { onPage: (page: Page) => void; onWallet: () => void; world?: boolean }
 
-export function SiteFooter({ onPage, onWallet }: Props) {
+export function SiteFooter({ onPage, onWallet, world = true }: Props) {
   const go = (page: Page) => { onPage(page); window.scrollTo({ top: 0 }) }
   return (
-    <footer className="fx-footer">
+    <footer className={world ? 'fx-footer has-world' : 'fx-footer'}>
+      {world && <OpenWorldBackdrop className="fx-footer__world" />}
       <div className="fx-footer__content">
         <div className="fx-footer__grid">
           <div className="fx-footer__left">
