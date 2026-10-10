@@ -5,6 +5,7 @@ python test_discovery.py
 python test_preference_integrity.py
 python test_starter_training.py
 python test_constraints.py
+python test_scene_lab.py
 python test_bounties.py
 python test_solana_verification.py
 python test_curation_api.py

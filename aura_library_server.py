@@ -9,6 +9,7 @@ from aura_bounties import (create_bounty, list_bounties, list_curations, curate,
 from aura_text2motion_generator import AuraText2MotionGenerator, list_examples
 from aura_motion_prior import train_prior, status as prior_status
 from aura_reward_model import train_reward_model, status as reward_status
+from aura_scene_lab import DEFAULT_SCENE, generate_scene_candidates, plan_path
 from aura_starter_motions import ensure_starter_motions
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,13 +36,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
+        if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/scene/plan', '/scene/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
             return self.send_error(404)
         try:
             size = int(self.headers.get('Content-Length', '0'))
             if size > 16384 or size < 0: raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(size)) if size else {}
-            if path == '/generator/generate':
+            if path == '/scene/plan':
+                out = plan_path(body.get('scene'))
+            elif path == '/scene/generate':
+                out = generate_scene_candidates(
+                    GENERATOR, BASE, prompt=body.get('prompt', ''), scene=body.get('scene') or DEFAULT_SCENE, count=body.get('count', 2)
+                )
+            elif path == '/generator/generate':
                 out = GENERATOR.generate(
                     prompt=body.get('prompt'),
                     example_id=body.get('example_id'),
@@ -98,6 +105,8 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
         if path == '/generator/status':
             return self.respond_json(200, GENERATOR.status())
+        if path == '/scene/default':
+            return self.respond_json(200, {'scene': DEFAULT_SCENE})
         if path == '/generator/examples':
             return self.respond_json(200, {'examples': list_examples()})
         if path == '/bounties':

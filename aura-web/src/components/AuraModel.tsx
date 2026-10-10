@@ -305,8 +305,31 @@ export function AuraModel() {
             <span className="aura-model-kicker">Live 3D output</span>
             <h2 id="aura-model-output-title">Inspect Aura’s actual motion output.</h2>
           </div>
-          <CharacterPicker className="aura-model-character-picker" />
+          <div className="aura-model-output-tools">
+            <div className="aura-model-train-cta">
+              <button
+                type="button"
+                className="aura-model-train-button"
+                onClick={() => void train()}
+                disabled={training || Boolean(diagnostics && !diagnostics.reward_trainable)}
+                title={diagnostics && !diagnostics.reward_trainable ? `Needs ${diagnostics.reward_min_comparisons} valid comparisons across ${diagnostics.reward_min_motions} motions` : undefined}
+              >
+                {training ? 'Training Aura…' : meta ? 'Retrain Aura model' : 'Train Aura model'}
+              </button>
+              <small>
+                {training
+                  ? 'Updating the reward model from saved A/B preferences.'
+                  : diagnostics?.reward_trainable
+                    ? `${diagnostics.valid_comparison_count} valid comparisons ready.`
+                    : diagnostics
+                      ? `Need ${diagnostics.reward_min_comparisons} valid comparisons across ${diagnostics.reward_min_motions} motions.`
+                      : 'Checking training data…'}
+              </small>
+            </div>
+            <CharacterPicker className="aura-model-character-picker" />
+          </div>
         </div>
+        {message && <p className="aura-model-top-message" role="status">{message}</p>}
 
         <div className="aura-model-output-shell">
           <div className="aura-model-output-player">

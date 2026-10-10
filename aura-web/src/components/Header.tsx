@@ -34,6 +34,7 @@ function isDarkBehind(x: number, y: number) {
 
 const nav: { id: Page; label: string }[] = [
   { id: 'studio', label: 'Motion studio' },
+  { id: 'scene', label: 'Scene lab' },
   { id: 'model', label: 'Aura model' },
   { id: 'curation', label: 'Curation' },
   { id: 'methodology', label: 'Methodology' },

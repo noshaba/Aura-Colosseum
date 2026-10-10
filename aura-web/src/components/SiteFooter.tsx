@@ -20,6 +20,7 @@ export function SiteFooter({ onPage, onWallet, world = true }: Props) {
             <div className="fx-footer__col">
               <span className="fx-footer__label">Explore</span>
               <button className="fx-link" onClick={() => go('studio')}>Motion studio</button>
+              <button className="fx-link" onClick={() => go('scene')}>Scene lab</button>
               <button className="fx-link" onClick={() => go('model')}>Aura model</button>
               <button className="fx-link" onClick={() => go('curation')}>Curation market</button>
               <button className="fx-link" onClick={() => go('methodology')}>Methodology</button>

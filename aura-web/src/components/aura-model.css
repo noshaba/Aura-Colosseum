@@ -136,3 +136,15 @@
 
 /* Page end: no stacked gaps before the footer (its world backdrop supplies the breathing room), as on the home page. */
 .fx-page.aura-model-page{padding-bottom:0}.aura-model-caveat{padding-bottom:0}
+
+/* Prominent training control beside the live 3D Aura output. */
+.aura-model-output-tools{display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-left:auto}
+.aura-model-train-cta{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.aura-model-train-button{min-height:46px;padding:0 20px;border:1px solid var(--fx-ink);border-radius:999px;background:var(--fx-ink);color:var(--fx-cream);font-size:13px;font-weight:600;cursor:pointer;transition:transform .18s ease,background .18s ease,color .18s ease}
+.aura-model-train-button:hover:not(:disabled),.aura-model-train-button:focus-visible:not(:disabled){transform:translateY(-1px);background:transparent;color:var(--fx-ink);outline:0}
+.aura-model-train-button:disabled{opacity:.45;cursor:default;transform:none}
+.aura-model-train-cta small{max-width:260px;text-align:right;font-size:10px;line-height:1.35;color:var(--fx-ink-40)}
+.aura-model-top-message{width:min(1180px,100%);margin:-24px 0 24px;padding:11px 14px;border:1px solid var(--fx-ink-10);border-radius:14px;background:rgba(129,178,154,.1);font-size:12px;line-height:1.45;color:var(--fx-ink-64)}
+
+@media(max-width:900px){.aura-model-output-tools{width:100%;justify-content:space-between;margin-left:0}.aura-model-train-cta{align-items:flex-start}.aura-model-train-cta small{text-align:left}}
+@media(max-width:650px){.aura-model-output-tools{align-items:stretch;flex-direction:column}.aura-model-train-button{width:100%}.aura-model-train-cta{width:100%}.aura-model-top-message{margin-top:-18px}}
