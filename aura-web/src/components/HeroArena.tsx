@@ -235,8 +235,7 @@ function isEditable(target: EventTarget | null) {
 
 const NAV_BAND_PX = 96
 const TONE_ATTR = { A: 'data-hero-tone-a', B: 'data-hero-tone-b' } as const
-/** Nav parts that follow the half of the hero they sit over (hero-arena.css). */
-const NAV_PARTS = '.fx-nav__burger, .fx-nav__pill'
+const NAV_PARTS = '.fx-nav__burger'
 const LIGHT: SideTones = { A: 'light', B: 'light' }
 
 function focusVisible(el: Element) {
@@ -544,11 +543,15 @@ export function HeroArena({ live = false }: { live?: boolean }) {
   const vote = useCallback(async (choice: Choice, input: HeroVote['input']) => {
     const scene = sceneRef.current, current = pairRef.current
     if (!scene || !current || busyRef.current) return
+
+    // Lock exactly once per visible matchup. The preference write is intentionally
+    // NOT on the visual critical path: a slow local API must never make A/B feel dead.
     busyRef.current = true; setBusy(true)
     const g = gameRef.current
     const counted = choice !== 'skip'
     const gain = counted ? VOTE_XP + STREAK_BONUS_XP * Math.min(g.streak, STREAK_BONUS_CAP) : 0
     const nextGame: Game = { round: g.round + 1, xp: g.xp + gain, streak: counted ? g.streak + 1 : 0, votes: g.votes + (counted ? 1 : 0) }
+
     if (counted) {
       storeVote({
         v: 2, ts: new Date().toISOString(), round: g.round,
@@ -560,44 +563,59 @@ export function HeroArena({ live = false }: { live?: boolean }) {
       })
     }
 
-    let saved: PreferenceResponse | null = null
-    if (choice === 'A' || choice === 'B') {
-      try { saved = await persistPreference(current, choice) }
-      catch (error) { setGenerationError(error instanceof Error ? error.message : 'Could not save preference.') }
-    }
+    // Start persistence immediately, but let the animation and next-motion load run
+    // at the same time. Any backend error is surfaced without swallowing the vote UX.
+    const savePromise: Promise<PreferenceResponse | null> = (choice === 'A' || choice === 'B')
+      ? persistPreference(current, choice).catch(error => {
+          setGenerationError(error instanceof Error ? error.message : 'Could not save preference.')
+          return null
+        })
+      : Promise.resolve(null)
 
     const said = choice === 'skip' ? 'Skipped.' : choice === 'tie' ? 'Tie recorded locally; no pairwise training label was added.' : `You picked Motion ${choice}.`
     setAnnounce(counted ? `${said} +${gain} XP.` : said)
     setGame(nextGame)
 
     try {
-      await scene.resolve(choice, gain)
-      if (sceneRef.current !== scene) return
-
+      // Decide and preload the next matchup before the celebration finishes. This
+      // removes the dead gap that used to appear after clicking A/B.
       const preferred = preferredGroupRef.current
       const upcoming = preferred ? pickPair(clipsRef.current, current, preferred) : (nextPairRef.current ?? pickPair(clipsRef.current, current))
       if (preferred && upcoming.a.preferenceGroup === preferred) preferredGroupRef.current = null
       nextPairRef.current = null
-      const [ca, cb] = await Promise.all([loadClip(upcoming.a), loadClip(upcoming.b)])
+      const nextClipsPromise = Promise.all([loadClip(upcoming.a), loadClip(upcoming.b)])
+
+      // A paused arena should still accept A/B. Resume playback for the transition,
+      // but do not require a separate first click just to resume.
+      if (!playing) setPlaying(true)
+      if (choice === 'A' || choice === 'B') scene.flashSide(choice)
+      const [, [ca, cb]] = await Promise.all([scene.resolve(choice, gain), nextClipsPromise])
+      if (sceneRef.current !== scene) return
+
       setPair(upcoming)
       const nextMode = upcoming.a.source === 'starter' ? 'starter' : 'generated'
       setMode(nextMode)
       await scene.setMatchup({ clip: ca, label: upcoming.a.label }, { clip: cb, label: upcoming.b.label })
       prefetchNext(upcoming)
       setAnnounce(`Round ${nextGame.round}: Motion A, ${upcoming.a.label}, versus Motion B, ${upcoming.b.label}.`)
-      if (saved?.training_data) {
-        setGenerationMessage(`${generating ? 'Generation continues in the background · ' : ''}${saved.training_data.valid_comparison_count} valid Aura comparisons across ${saved.training_data.unique_motion_count} unique motions. ${poolCount || clipsRef.current.length} motions are available in the picker.`)
-      }
       roundStartRef.current = performance.now()
+
+      // Update training diagnostics when the save finishes, without holding the UI.
+      void savePromise.then(saved => {
+        if (!saved?.training_data) return
+        setGenerationMessage(`${generating ? 'Generation continues in the background · ' : ''}${saved.training_data.valid_comparison_count} valid Aura comparisons across ${saved.training_data.unique_motion_count} unique motions. ${poolCount || clipsRef.current.length} motions are available in the picker.`)
+      })
     } catch {
       if (sceneRef.current === scene) setPhase('error')
     } finally {
       if (sceneRef.current === scene) { busyRef.current = false; setBusy(false) }
     }
-  }, [generating, persistPreference, poolCount, prefetchNext])
+  }, [generating, persistPreference, playing, poolCount, prefetchNext])
 
   const pick = useCallback((side: Side, input: HeroVote['input']) => {
-    if (!playing) { setPlaying(true); return }
+    // A/B always means "vote A/B". If playback is paused, the same click resumes
+    // the motion and records the vote instead of consuming the click as Play.
+    if (!playing) setPlaying(true)
     void vote(side, input)
   }, [playing, vote])
   pickRef.current = pick
@@ -605,10 +623,9 @@ export function HeroArena({ live = false }: { live?: boolean }) {
   useEffect(() => {
     let voteTimer = 0
     const keyVote = (side: Side) => {
-      if (!playing) { pickRef.current(side, 'keyboard'); return }
       if (busyRef.current || voteTimer) return
       sceneRef.current?.flashSide(side)
-      voteTimer = window.setTimeout(() => { voteTimer = 0; pickRef.current(side, 'keyboard') }, 160)
+      voteTimer = window.setTimeout(() => { voteTimer = 0; pickRef.current(side, 'keyboard') }, 120)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isEditable(e.target)) return
