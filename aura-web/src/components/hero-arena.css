@@ -143,3 +143,146 @@ html[data-hero-tone-a="dark"][data-hero-tone-b="dark"] .fx-nav:not(.is-open) .fx
   .hero-arena__btn { transition: none; }
   .fx-nav__logo .fx-nav__logo-alt { transition: none; }
 }
+
+/* --------------------------------------------------------------------------
+   Unified live generation controls. The top arena is now the generator + rater;
+   the old lower generator panel is not rendered by MotionStudio.
+   -------------------------------------------------------------------------- */
+.hero-arena__generator {
+  position: absolute;
+  z-index: 6;
+  top: 104px;
+  left: 50%;
+  width: min(920px, calc(100% - 112px));
+  transform: translateX(-50%);
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--fx-ink) 14%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--fx-cream) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(1.1);
+  box-shadow: 0 18px 50px rgba(31, 35, 43, .10);
+  color: var(--fx-ink);
+  pointer-events: auto;
+}
+.hero-arena__generator-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.hero-arena__generator-main label,
+.hero-arena__generator-meta label {
+  font-family: var(--fx-mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fx-ink-64);
+}
+.hero-arena__generator-main input[type="text"] {
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--fx-ink-10);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  color: var(--fx-ink);
+  font-size: 14px;
+  outline: none;
+}
+.hero-arena__generator-main input[type="text"]:focus {
+  border-color: var(--fx-sage);
+  box-shadow: 0 0 0 3px rgba(129, 178, 154, .16);
+}
+.hero-arena__generator-main > button,
+.hero-arena__starter-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fx-navy);
+  color: var(--fx-eggshell);
+  font-family: var(--fx-mono);
+  font-size: 10px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.hero-arena__generator-main > button:disabled,
+.hero-arena__starter-button:disabled { opacity: .5; cursor: default; }
+.hero-arena__generator-meta {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 220px) auto auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+  padding: 0 4px;
+}
+.hero-arena__generator-meta label { display: flex; gap: 6px; align-items: center; }
+.hero-arena__generator-meta label strong { color: var(--fx-ink); font-size: 11px; }
+.hero-arena__generator-meta input[type="range"] { width: 100%; accent-color: var(--fx-sage); }
+.hero-arena__generator-meta > span {
+  font-family: var(--fx-mono);
+  font-size: 8px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--fx-ink-40);
+  white-space: nowrap;
+}
+.hero-arena__generator-meta > span.is-ready { color: #4d7a68; }
+.hero-arena__starter-button { min-height: 30px; padding: 0 11px; background: transparent; color: var(--fx-ink); border: 1px solid var(--fx-ink-10); }
+.hero-arena__generator-message {
+  margin-top: 9px;
+  padding: 8px 10px 2px;
+  border-top: 1px solid var(--fx-ink-10);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fx-ink-64);
+}
+.hero-arena__generator-message.is-error { color: #a33e33; }
+.hero-arena__generating {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 15px 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fx-navy) 88%, transparent);
+  color: var(--fx-eggshell);
+  pointer-events: none;
+}
+.hero-arena__generating strong { font-family: var(--fx-mono); font-size: 12px; letter-spacing: .12em; }
+.hero-arena__generating span { font-size: 11px; color: var(--fx-cream-70); }
+.hero-arena__source {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  max-width: min(720px, calc(100% - 180px));
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fx-cream) 78%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--fx-ink);
+  text-align: center;
+  pointer-events: none;
+}
+.hero-arena__source span { display: block; font-family: var(--fx-mono); font-size: 7px; letter-spacing: .1em; color: var(--fx-ink-40); }
+.hero-arena__source strong { display: block; margin-top: 3px; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hero-arena__source small { display: block; margin-top: 2px; font-size: 8px; color: var(--fx-ink-40); }
+
+@media (max-width: 767px) {
+  .hero-arena__generator { top: 86px; width: calc(100% - 24px); padding: 10px; border-radius: 18px; }
+  .hero-arena__generator-main { grid-template-columns: 1fr auto; }
+  .hero-arena__generator-main label { grid-column: 1 / -1; }
+  .hero-arena__generator-main input[type="text"] { height: 40px; }
+  .hero-arena__generator-meta { grid-template-columns: auto 1fr; }
+  .hero-arena__generator-meta > span { grid-column: 1 / -1; }
+  .hero-arena__starter-button { justify-self: start; }
+  .hero-arena__source { bottom: 68px; max-width: calc(100% - 100px); }
+}

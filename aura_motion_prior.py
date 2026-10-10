@@ -255,6 +255,8 @@ def score_all(base: Path, metadata=None):
             item = json.loads(path.read_text())
             if not isinstance(item, dict) or "g1" not in str(item.get("model", "")).lower() or not item.get("native_file"):
                 continue
+            if item.get("source") == "starter_reference":
+                continue
             score = score_motion(base, str(item["id"]), arrays)
             out.append({"id": item["id"], "name": item.get("name", item["id"]), "prior_score": round(float(score), 4)})
         except (ValueError, KeyError, OSError, TypeError, json.JSONDecodeError):

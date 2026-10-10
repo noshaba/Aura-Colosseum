@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python test_discovery.py
 python test_preference_integrity.py
+python test_starter_training.py
 python test_constraints.py
 python test_bounties.py
 python test_solana_verification.py

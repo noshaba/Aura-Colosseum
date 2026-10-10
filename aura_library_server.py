@@ -9,6 +9,7 @@ from aura_bounties import (create_bounty, list_bounties, list_curations, curate,
 from aura_text2motion_generator import AuraText2MotionGenerator, list_examples
 from aura_motion_prior import train_prior, status as prior_status
 from aura_reward_model import train_reward_model, status as reward_status
+from aura_starter_motions import ensure_starter_motions
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +17,7 @@ from urllib.parse import urlparse, parse_qs
 
 BASE = Path(os.environ.get("AURA_MOTION_LIBRARY", str(Path(__file__).resolve().parent / "aura-motion-library"))).resolve()
 BASE.mkdir(exist_ok=True, parents=True)
+ensure_starter_motions(BASE)
 
 DB = BASE / "aura-preferences.sqlite3"
 PORT = int(os.environ.get("AURA_LIBRARY_PORT", "8765"))
@@ -163,6 +165,11 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     item = json.loads(file.read_text())
                     if not isinstance(item, dict) or not item.get('id') or not item.get('native_file'):
+                        continue
+                    # Starter/reference records exist in the same library so their
+                    # human votes can train Aura, but they are already rendered by
+                    # the top hero arena and should not appear as generated library items.
+                    if item.get('source') == 'starter_reference':
                         continue
                     if item.get("model", "").lower().find("g1") >= 0:
                         try:

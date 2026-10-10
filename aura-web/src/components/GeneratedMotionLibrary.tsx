@@ -23,6 +23,7 @@ type Motion = {
   fps: number; native_file: string; preview_file: string | null;
   preview_error?: string | null; evaluation_error?: string | null;
   kinematic_evaluation?: Result;
+  source?: string;
 }
 type Review = { score: number; note: string; reviewed_at: string }
 type PriorState = { model: null | { version: string; caveat: string }; scores: { id: string; prior_score: number }[] }
@@ -64,8 +65,9 @@ export function GeneratedMotionLibrary() {
       if (!response.ok) throw new Error('Local Aura library server is not running on port 8765.')
       const items = await response.json() as Motion[]
       if (!Array.isArray(items)) throw new Error('Invalid motion-library response')
-      setMotions(items)
-      const newest = items[0]?.id || ''
+      const visibleItems = items.filter(item => item.source !== 'starter_reference')
+      setMotions(visibleItems)
+      const newest = visibleItems[0]?.id || ''
       setSelected(previous => {
         const starterDefault = `aist:${AIST_REFERENCE_MOTIONS[0].id}`
         if (!libraryInitializedRef.current) {
@@ -85,7 +87,7 @@ export function GeneratedMotionLibrary() {
           return newest
         }
         newestMotionRef.current = newest || null
-        return items.some(x => x.id === previous) ? previous : (newest || starterDefault)
+        return visibleItems.some(x => x.id === previous) ? previous : (newest || starterDefault)
       })
       try {
         const [priorResponse, rewardResponse] = await Promise.all([

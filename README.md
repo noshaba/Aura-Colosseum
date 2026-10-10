@@ -101,9 +101,9 @@ The browser submits signatures only; the Python coordinator independently fetche
 
 ## What is actually implemented
 
-- Aura-native prompt + example controls calling NVIDIA Kimodo directly, without embedding the full NVIDIA Kimodo/Viser viewer.
+- A single prompt + candidate-count control embedded directly in the top Motion-vs-Motion arena, calling NVIDIA Kimodo without embedding the full Kimodo/Viser viewer.
 - Automatic saving of NVIDIA Kimodo G1 generations as NPZ plus rotation-aware G1 preview, with newest output auto-playing in the main viewer.
-- Preloaded AIST++ → Unitree G1 starter comparisons inside the main Motion-vs-Motion player so first-time visitors can rate immediately without GPU generation. Starter ratings are kept separate from generated-motion training data.
+- Preloaded G1 starter/reference comparisons inside the top Motion-vs-Motion arena so first-time visitors can rate immediately without GPU generation. In live mode, those exact trajectories are materialized as robot-native NPZ records and their A/B choices contribute to Aura's broad motion-preference reward model; they remain tagged separately from same-prompt generated comparisons and are not prompt-compliance evidence.
 - Reproducible G1 kinematic screening with report/file SHA-256 hashes.
 - Native task-constraint engine; no BioIK or AI4Animation dependency.
 - Persistent pairwise human comparisons in SQLite.
@@ -202,7 +202,7 @@ The live Motion Studio opens directly on a Motion-vs-Motion comparison using six
 
 ## Batch-first interaction
 
-The live generator produces 2–6 same-prompt G1 candidates per request. Before generation, visitors can immediately rate a six-motion AIST++ starter tournament in the same player. Once a batch is generated, Aura replaces the starter set with the generated motion-vs-motion tournament and stores those same-prompt choices in the real preference dataset. During generation, the centered player overlay reads **AURA IS GENERATING** over the retargeted loading animation.
+The top Motion-vs-Motion arena is also the live generator. Visitors can rate bundled G1 starter/reference motions immediately, type a prompt in the arena, choose 2–6 candidates, and generate a fresh same-prompt batch without scrolling to a separate generator panel. Generated candidates replace the starter matchup and run as a winner-vs-next tournament. Live A/B choices from both starter/reference and generated motions are persisted to Aura; starter records are explicitly tagged as broad motion-quality data, while generated comparisons retain the same-prompt constraint.
 
 The Motion Studio stays focused on generation/comparison and the Generated Motion Library. The Solana curation market is available as its own top-level **Curation** page so the payment/provenance workflow remains visible without cluttering the primary motion workflow. Constraint, discovery, benchmark, and standalone AIST reference tools remain in the repository/backend where applicable.
 

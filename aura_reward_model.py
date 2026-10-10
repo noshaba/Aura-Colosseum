@@ -391,6 +391,8 @@ def score_all(base: Path):
             item = json.loads(path.read_text())
             if not isinstance(item, dict) or not item.get("id") or "g1" not in str(item.get("model", "")).lower() or not item.get("native_file"):
                 continue
+            if item.get("source") == "starter_reference":
+                continue
             reward = score_motion(base, str(item["id"]), loaded)
             if reward is not None:
                 rows.append({"id": item["id"], "name": item.get("name", item["id"]), "reward": round(float(reward), 5)})

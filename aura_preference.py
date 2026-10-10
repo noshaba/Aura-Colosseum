@@ -96,10 +96,13 @@ def add_preference(conn, base, left_id, right_id, winner_id, context='', evaluat
     evaluator_id = _clean_evaluator_id(evaluator_id)
     left = get_motion(base, left_id)
     right = get_motion(base, right_id)
-    left_prompt = str(left.get('name') or '').strip()
-    right_prompt = str(right.get('name') or '').strip()
-    if left_prompt and right_prompt and left_prompt != right_prompt:
-        raise ValueError('Aura discovery requires two motions generated from the same exact prompt')
+    # Generated candidates still compare within the exact same prompt. Bundled
+    # starter/reference clips share an explicit preference_group so their votes can
+    # teach broad motion quality without pretending they measure prompt compliance.
+    left_group = str(left.get('preference_group') or left.get('name') or '').strip()
+    right_group = str(right.get('preference_group') or right.get('name') or '').strip()
+    if left_group and right_group and left_group != right_group:
+        raise ValueError('Aura preferences require two motions from the same comparison group')
 
     left_hash = left['kinematic_evaluation']['native_sha256']
     right_hash = right['kinematic_evaluation']['native_sha256']
@@ -357,6 +360,8 @@ def rank(conn, base):
             continue
         try:
             m = get_motion(base, path.stem)
+            if m.get('source') == 'starter_reference':
+                continue
             f = features(m)
             score = float(f / scale @ w)
             motions.append({
