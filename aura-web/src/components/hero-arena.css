@@ -102,7 +102,7 @@
    html[data-hero-tone-a|b] and tags the burger with data-hero-side="a|b" (the half
    it is over), so it follows its own half. The logo can straddle the centre: a
    light copy (.fx-nav__logo-alt) is clipped to the dark half at --hero-logo-split.
-   The open menu (pills) keeps its normal look (:not(.is-open)).
+   Menu pills are tagged too; their dark look lives in nav-panel.css.
    -------------------------------------------------------------------------- */
 /* Menu pills keep their drop-in fade */
 html .fx-nav__pill { transition: color .35s var(--ha-ease), background-color .3s ease, box-shadow .3s ease, opacity .3s var(--fx-ease-nav), translate .3s var(--fx-ease-nav); }

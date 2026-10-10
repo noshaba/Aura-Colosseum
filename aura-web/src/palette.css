@@ -57,9 +57,9 @@
 /* "Ready" reads as go: sage dot with a soft sage halo */
 .aura-engine-status.ready > span { background: var(--fx-sage) !important; box-shadow: 0 0 0 4px rgba(129, 178, 154, .25) !important; }
 
-/* Footer sits on navy: sage and terra fail AA for small text there, so use eggshell tiers */
-.fx-footer__muted, .fx-footer__label { color: var(--fx-cream-70); }
-.fx-footer__legal { color: rgba(244, 241, 222, .6); }
+/* Footer is a light glass card: secondary text uses the navy tiers (AA on eggshell). */
+.fx-footer__muted, .fx-footer__label { color: var(--fx-tone-600); }
+.fx-footer__legal { color: var(--fx-tone-500); }
 
 /* Frosted nav pill re-tinted to the new surface */
 .fx-nav__pill:not(.fx-nav__cta) { background: rgba(235, 232, 215, .66); }

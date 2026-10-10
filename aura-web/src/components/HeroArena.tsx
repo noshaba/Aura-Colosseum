@@ -78,7 +78,7 @@ function isEditable(target: EventTarget | null) {
 const NAV_BAND_PX = 96
 const TONE_ATTR = { A: 'data-hero-tone-a', B: 'data-hero-tone-b' } as const
 /** Nav parts that follow the half of the hero they sit over (hero-arena.css). */
-const NAV_PARTS = '.fx-nav__burger'
+const NAV_PARTS = '.fx-nav__burger, .fx-nav__pill'
 const LIGHT: SideTones = { A: 'light', B: 'light' }
 
 function focusVisible(el: Element) {

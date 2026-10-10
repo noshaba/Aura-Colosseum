@@ -1,15 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
 import { shortAddress } from '../solana'
 import { useSmartNav } from '../hooks/useSmartNav'
-import { CharacterPicker } from './CharacterPicker'
 import { CharacterSwitch } from './CharacterSwitch'
 import type { Page } from '../types'
+import './nav-panel.css'
 
 type Props = {
   page: Page
   onPage: (page: Page) => void
   onWallet: () => void
   walletAddress: string | null
+}
+
+/** Relative luminance (0..1) of a computed rgb()/rgba() colour; null when transparent. */
+function luminance(color: string): number | null {
+  const m = color.match(/rgba?\(([^)]+)\)/)
+  if (!m) return null
+  const [r, g, b, a = 1] = m[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+  if (a < 0.5) return null
+  const lin = (c: number) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+/** True when the first opaque background under (x, y), outside the nav, is dark. */
+function isDarkBehind(x: number, y: number) {
+  const hit = document.elementsFromPoint(x, y).find(el => !el.closest('.fx-nav'))
+  for (let el: Element | null = hit ?? null; el; el = el.parentElement) {
+    const l = luminance(getComputedStyle(el).backgroundColor)
+    if (l != null) return l < 0.18
+  }
+  return false
 }
 
 const nav: { id: Page; label: string }[] = [
@@ -37,7 +57,32 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
     }
   }, [open])
 
-  const go = (id: Page) => { onPage(id); setOpen(false); window.scrollTo({ top: 0 }) }
+  // While open, tag each pill with the tone of what sits behind it so it can flip to
+  // the dark variant (nav-panel.css). The home hero's split halves are canvas/gradient,
+  // which this can't read; HeroArena tags those pills via data-hero-side instead.
+  useEffect(() => {
+    if (!open) return
+    let raf = 0
+    const sample = () => {
+      raf = 0
+      menu.current?.querySelectorAll<HTMLElement>('.fx-nav__pill').forEach(pill => {
+        const r = pill.getBoundingClientRect()
+        if (isDarkBehind(r.left + r.width / 2, r.top + r.height / 2)) pill.dataset.bg = 'dark'
+        else delete pill.dataset.bg
+      })
+    }
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(sample) }
+    schedule()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', schedule)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+    }
+  }, [open])
+
+  const go =(id: Page) => { onPage(id); setOpen(false); window.scrollTo({ top: 0 }) }
   const cls = ['fx-nav', scrolled && 'is-scrolled', collapsed && 'is-collapsed', open && 'is-open'].filter(Boolean).join(' ')
   const walletLabel = walletAddress ? shortAddress(walletAddress) : 'Connect wallet'
 
@@ -49,7 +94,7 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
           {/* Light copy, shown only over the dark half of the home hero (hero-arena.css). */}
           <img className="fx-nav__logo-alt" src={`${base}brand/aura-logo-horizontal.png`} alt="" aria-hidden="true" />
         </button>
-        {/* Always visible; cycles the character (the dropdown picker below shares the store). */}
+        {/* Always visible; the only character control in the nav. */}
         <CharacterSwitch />
         <div className="fx-nav__side" ref={menu}>
           <button className="fx-nav__burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="fx-nav-panel" onClick={() => setOpen(v => !v)}>
@@ -63,7 +108,6 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
                 {item.label}
               </button>
             ))}
-            <CharacterPicker className="fx-nav__pill" tabbable={open} />
             <button tabIndex={open ? 0 : -1} className={walletAddress ? 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta is-connected' : 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta'} onClick={() => { setOpen(false); onWallet() }}>
               <img className="fx-nav__cta-mark" src={`${base}brand/aura-mark.png`} alt="" aria-hidden="true" />
               <span>{walletLabel}</span>
