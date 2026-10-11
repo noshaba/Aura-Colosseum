@@ -9,13 +9,21 @@ type Props = {
   previewFile?: string | null
   splatBuffer?: ArrayBuffer | null
   plan?: ScenePlan | null
+  /** Euler rotation applied only to the visual splat, in radians. */
+  splatRotation?: [number, number, number]
 }
 
 type RigPart = { mesh: THREE.Mesh; joint: number; geomPos: THREE.Vector3; geomQuat: THREE.Quaternion }
+const ZERO_SPLAT_ROTATION: [number, number, number] = [0, 0, 0]
 
-export function SplatG1SceneViewer({ previewFile, splatBuffer, plan }: Props) {
+export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotation = ZERO_SPLAT_ROTATION }: Props) {
   const mount = useRef<HTMLDivElement>(null)
+  const splatObject = useRef<THREE.Object3D | null>(null)
   const [status, setStatus] = useState('Load a .splat scene or generate a scene-aware motion.')
+
+  useEffect(() => {
+    if (splatObject.current) splatObject.current.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
+  }, [splatRotation])
 
   useEffect(() => {
     const el = mount.current
@@ -51,6 +59,8 @@ export function SplatG1SceneViewer({ previewFile, splatBuffer, plan }: Props) {
     if (splatBuffer) {
       try {
         splat = createLightweightSplat(splatBuffer)
+        splat.object.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
+        splatObject.current = splat.object
         scene.add(splat.object)
         setStatus(`Gaussian-splat preview · ${splat.renderedSplats.toLocaleString()} / ${splat.totalSplats.toLocaleString()} splats`)
       } catch (error) {
@@ -125,7 +135,7 @@ export function SplatG1SceneViewer({ previewFile, splatBuffer, plan }: Props) {
     raf = requestAnimationFrame(tick)
 
     return () => {
-      disposed = true; cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); splat?.dispose()
+      disposed = true; cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); splatObject.current = null; splat?.dispose()
       rig.forEach(part => part.mesh.geometry.dispose())
       scene.traverse(obj => {
         if (obj instanceof THREE.Mesh && obj !== floor) {

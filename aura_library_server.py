@@ -10,6 +10,8 @@ from aura_text2motion_generator import AuraText2MotionGenerator, list_examples
 from aura_motion_prior import train_prior, status as prior_status
 from aura_reward_model import train_reward_model, status as reward_status
 from aura_scene_lab import DEFAULT_SCENE, generate_scene_candidates, plan_path
+from aura_scene_capture import (MAX_UPLOAD_BYTES, create_capture, get_capture, reconstruction_backend,
+    splat_path as scene_splat_path, start_reconstruction)
 from aura_starter_motions import ensure_starter_motions
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,11 +36,37 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def respond_binary(self, status, data, content_type="application/octet-stream", filename=None):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        if filename:
+            self.send_header("Content-Disposition", f'inline; filename="{filename}"')
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/scene/plan', '/scene/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
-            return self.send_error(404)
         try:
+            if path == '/scene/captures':
+                size = int(self.headers.get('Content-Length', '0'))
+                if size <= 0 or size > MAX_UPLOAD_BYTES:
+                    raise ValueError(f'Camera capture must be between 1 byte and {MAX_UPLOAD_BYTES // (1024 * 1024)} MB')
+                content_type = self.headers.get('Content-Type', 'video/webm')
+                name = self.headers.get('X-Aura-Capture-Name', 'Camera scene')
+                duration = self.headers.get('X-Aura-Capture-Duration')
+                out = create_capture(
+                    self.rfile.read(size), content_type=content_type, name=name,
+                    duration_s=float(duration) if duration not in (None, '') else None,
+                )
+                return self.respond_json(201, out)
+            capture_parts = path.strip('/').split('/')
+            if len(capture_parts) == 4 and capture_parts[0] == 'scene' and capture_parts[1] == 'captures' and capture_parts[3] == 'reconstruct':
+                out = start_reconstruction(capture_parts[2], before_start=GENERATOR.release_model)
+                return self.respond_json(202, out)
+            if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/scene/plan', '/scene/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
+                return self.send_error(404)
             size = int(self.headers.get('Content-Length', '0'))
             if size > 16384 or size < 0: raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(size)) if size else {}
@@ -107,6 +135,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond_json(200, GENERATOR.status())
         if path == '/scene/default':
             return self.respond_json(200, {'scene': DEFAULT_SCENE})
+        if path == '/scene/capture/status':
+            return self.respond_json(200, {
+                'backend': reconstruction_backend(),
+                'max_upload_mb': MAX_UPLOAD_BYTES // (1024 * 1024),
+                'capture_note': 'Browser camera capture requires localhost or HTTPS. Reconstruction is visual context; scene planning still uses the explicit geometry proxy.',
+            })
+        capture_parts = path.strip('/').split('/')
+        if len(capture_parts) in (3, 4) and capture_parts[0] == 'scene' and capture_parts[1] == 'captures':
+            try:
+                capture_id = capture_parts[2]
+                if len(capture_parts) == 3:
+                    return self.respond_json(200, get_capture(capture_id))
+                if capture_parts[3] == 'splat':
+                    file = scene_splat_path(capture_id)
+                    return self.respond_binary(200, file.read_bytes(), 'application/octet-stream', f'{capture_id}.splat')
+            except (ValueError, OSError) as exc:
+                return self.respond_json(404, {'error': str(exc)})
         if path == '/generator/examples':
             return self.respond_json(200, {'examples': list_examples()})
         if path == '/bounties':

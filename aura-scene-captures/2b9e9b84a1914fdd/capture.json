@@ -1,0 +1,21 @@
+{
+  "id": "2b9e9b84a1914fdd",
+  "name": "Aura room 7:13:33 PM",
+  "status": "uploaded",
+  "stage": "capture uploaded",
+  "progress": 0.05,
+  "created_at": 1791738813,
+  "content_type": "video/webm;codecs=vp9",
+  "bytes": 1097597,
+  "duration_s": 2.738,
+  "video_file": "capture.webm",
+  "splat_ready": false,
+  "backend": {
+    "available": false,
+    "kind": "nerfstudio-conda",
+    "label": "Nerfstudio / Splatfacto via conda env aura-splat",
+    "detail": "Missing in conda env aura-splat: ns-process-data, ns-train, ns-export"
+  },
+  "note": "Captured video is local to this Aura machine. Gaussian reconstruction is visual context; planning uses the explicit geometry proxy.",
+  "updated_at": 1791738833
+}

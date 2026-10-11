@@ -1,0 +1,22 @@
+{
+  "id": "7760ead9ee9645db",
+  "name": "Aura room 7:37:30 PM",
+  "status": "error",
+  "stage": "reconstruction failed",
+  "progress": 0.0,
+  "created_at": 1791740250,
+  "content_type": "video/webm;codecs=vp9",
+  "bytes": 1065890,
+  "duration_s": 2.63,
+  "video_file": "capture.webm",
+  "splat_ready": false,
+  "backend": {
+    "available": true,
+    "kind": "nerfstudio-conda",
+    "label": "Nerfstudio / Splatfacto via conda env aura-splat",
+    "detail": "Ready: camera poses \u2192 Splatfacto \u2192 Gaussian export"
+  },
+  "note": "Captured video is local to this Aura machine. Gaussian reconstruction is visual context; planning uses the explicit geometry proxy.",
+  "updated_at": 1791740271,
+  "error": "RuntimeError: Reconstruction command failed with exit code 1; see reconstruction.log"
+}

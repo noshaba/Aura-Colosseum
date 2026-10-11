@@ -196,6 +196,14 @@ The local Python API intentionally binds to `127.0.0.1`. Do not expose it to the
 
 `@solana/web3.js` is now imported from the app dependency graph and bundled by Vite. Aura no longer depends on the unpkg CDN at runtime. Run `npm install` once in `aura-web/` before building; the package versions are pinned in `package.json`.
 
+## Scene Lab: camera → Gaussian splat → scene-fitted locomotion
+
+Aura includes an experimental **Scene lab** that can record a static environment directly from the browser camera, send the local video through a configurable Gaussian-splat reconstruction backend, and load the finished `.splat` back into the page automatically. The built-in reconstruction adapter supports Nerfstudio/Splatfacto or an operator-provided command. Manual `.splat` loading remains available.
+
+NVIDIA Kimodo still supplies the G1 body motion. Start/goal positions and obstacle geometry are represented separately because Gaussian opacity is not treated as a collision model and monocular reconstruction does not provide trustworthy metric scale by itself. Aura plans a collision-aware root route, generates exactly two Kimodo G1 motions, fits their global trajectories onto that route, and saves the fitted motions back into the normal Aura library for preference learning. See `SCENE_LAB.md`.
+
+This first scene mode is intentionally limited to locomotion/navigation. It does not make Kimodo scene-conditioned and does not claim contact-rich interaction, physical balance, safety, or simulator validation.
+
 ## Generated G1 playback
 
 The live Motion Studio opens directly on a Motion-vs-Motion comparison using six preloaded AIST++ clips retargeted to the G1. After Aura generates a batch, the same player switches to the newly generated candidates and records same-prompt preferences. The separate AIST++ reference section has been removed.

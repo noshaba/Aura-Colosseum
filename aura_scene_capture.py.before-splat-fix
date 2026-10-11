@@ -1,0 +1,407 @@
+"""Browser-camera capture -> Gaussian-splat reconstruction support for Aura Scene Lab.
+
+The browser records a short static-scene video and uploads it to Aura's localhost API.
+Reconstruction runs asynchronously so the rest of Aura remains usable. By default Aura
+can drive Nerfstudio/Splatfacto when the CLI is installed; an operator can instead set
+``AURA_SPLAT_RECON_COMMAND`` to a wrapper executable. The wrapper receives three
+arguments: input_video, work_directory, output_splat.
+
+The output ``.splat`` is *visual context*. Metric collision/planning continues to use
+Aura's explicit scene geometry proxy because monocular SfM has scale ambiguity.
+"""
+from __future__ import annotations
+
+import json
+import math
+from functools import lru_cache
+import os
+import re
+import shlex
+import shutil
+import struct
+import subprocess
+import threading
+import time
+import uuid
+from pathlib import Path
+from typing import Any, Callable
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent
+CAPTURE_ROOT = Path(os.environ.get("AURA_SPLAT_CAPTURE_DIR", str(ROOT / "aura-scene-captures"))).resolve()
+CAPTURE_ROOT.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD_BYTES = max(10, int(os.environ.get("AURA_SPLAT_MAX_UPLOAD_MB", "300"))) * 1024 * 1024
+TRAIN_STEPS = max(500, min(50_000, int(os.environ.get("AURA_SPLAT_TRAIN_STEPS", "7000"))))
+TARGET_FRAMES = max(24, min(400, int(os.environ.get("AURA_SPLAT_FRAMES", "120"))))
+CUSTOM_COMMAND = os.environ.get("AURA_SPLAT_RECON_COMMAND", "").strip()
+CONDA_ENV = os.environ.get("AURA_SPLAT_NERFSTUDIO_ENV", "").strip()
+_CAPTURE_ID = re.compile(r"^[a-f0-9]{16}$")
+_JOBS: dict[str, threading.Thread] = {}
+_JOBS_LOCK = threading.Lock()
+_SH_C0 = 0.28209479177387814
+
+
+def _safe_id(capture_id: str) -> str:
+    value = str(capture_id or "").strip().lower()
+    if not _CAPTURE_ID.fullmatch(value):
+        raise ValueError("Invalid scene capture id")
+    return value
+
+
+def _capture_dir(capture_id: str) -> Path:
+    path = (CAPTURE_ROOT / _safe_id(capture_id)).resolve()
+    if path.parent != CAPTURE_ROOT:
+        raise ValueError("Invalid scene capture path")
+    return path
+
+
+def _meta_path(capture_id: str) -> Path:
+    return _capture_dir(capture_id) / "capture.json"
+
+
+def _read_meta(capture_id: str) -> dict[str, Any]:
+    path = _meta_path(capture_id)
+    if not path.is_file():
+        raise ValueError("Unknown scene capture")
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError("Invalid scene capture metadata")
+    return data
+
+
+def _write_meta(capture_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    path = _meta_path(capture_id)
+    current: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            current = json.loads(path.read_text())
+        except Exception:
+            current = {}
+    current.update(updates)
+    current["updated_at"] = int(time.time())
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(current, indent=2))
+    tmp.replace(path)
+    return current
+
+
+def _extension(content_type: str) -> str:
+    lowered = str(content_type or "").lower()
+    if "mp4" in lowered or "quicktime" in lowered:
+        return ".mp4"
+    if "webm" in lowered:
+        return ".webm"
+    # MediaRecorder implementations occasionally omit a precise type. ffmpeg can
+    # still inspect a WebM payload, so keep the common browser extension.
+    return ".webm"
+
+
+def _probe_command(prefix: list[str], command: str, *args: str) -> bool:
+    try:
+        result = subprocess.run(
+            prefix + [command, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=False, timeout=12,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+@lru_cache(maxsize=1)
+def reconstruction_backend() -> dict[str, Any]:
+    """Report the *actual* reconstruction runtime, not just whether conda exists."""
+    if CUSTOM_COMMAND:
+        command = shlex.split(CUSTOM_COMMAND)
+        executable = shutil.which(command[0]) if command else None
+        return {
+            "available": bool(command and executable),
+            "kind": "custom",
+            "label": "Configured Gaussian-splat reconstruction command",
+            "detail": CUSTOM_COMMAND if executable else f"Command not found: {command[0] if command else CUSTOM_COMMAND}",
+        }
+
+    commands = (("ns-process-data", "--help"), ("ns-train", "--help"), ("ns-export", "--help"),
+                ("ffmpeg", "-version"), ("colmap", "-h"))
+    if CONDA_ENV:
+        conda = shutil.which("conda")
+        if not conda:
+            return {
+                "available": False, "kind": "nerfstudio-conda",
+                "label": f"Nerfstudio / Splatfacto via conda env {CONDA_ENV}",
+                "detail": "conda is not on PATH",
+            }
+        prefix = [conda, "run", "--no-capture-output", "-n", CONDA_ENV]
+        missing = [name for name, arg in commands if not _probe_command(prefix, name, arg)]
+        return {
+            "available": not missing,
+            "kind": "nerfstudio-conda",
+            "label": f"Nerfstudio / Splatfacto via conda env {CONDA_ENV}",
+            "detail": ("Ready: camera poses → Splatfacto → Gaussian export" if not missing
+                       else f"Missing in conda env {CONDA_ENV}: " + ", ".join(missing)),
+        }
+
+    missing = []
+    for name, arg in commands:
+        if not shutil.which(name) or not _probe_command([], name, arg):
+            missing.append(name)
+    return {
+        "available": not missing,
+        "kind": "nerfstudio",
+        "label": "Nerfstudio / Splatfacto",
+        "detail": ("Ready: camera poses → Splatfacto → Gaussian export" if not missing
+                   else "Missing from the active Aura environment: " + ", ".join(missing)
+                        + ". Install a separate Nerfstudio env and set AURA_SPLAT_NERFSTUDIO_ENV=aura-splat."),
+    }
+
+
+def create_capture(data: bytes, *, content_type: str, name: str = "", duration_s: float | None = None) -> dict[str, Any]:
+    if not data:
+        raise ValueError("Camera capture is empty")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"Camera capture exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+    capture_id = uuid.uuid4().hex[:16]
+    directory = _capture_dir(capture_id)
+    directory.mkdir(parents=True, exist_ok=False)
+    ext = _extension(content_type)
+    video = directory / f"capture{ext}"
+    video.write_bytes(data)
+    duration = None
+    try:
+        if duration_s is not None and math.isfinite(float(duration_s)):
+            duration = round(max(0.0, float(duration_s)), 3)
+    except (TypeError, ValueError):
+        duration = None
+    meta = {
+        "id": capture_id,
+        "name": str(name or "Camera scene")[:100],
+        "status": "uploaded",
+        "stage": "capture uploaded",
+        "progress": 0.05,
+        "created_at": int(time.time()),
+        "content_type": str(content_type or "application/octet-stream")[:120],
+        "bytes": len(data),
+        "duration_s": duration,
+        "video_file": video.name,
+        "splat_ready": False,
+        "backend": reconstruction_backend(),
+        "note": "Captured video is local to this Aura machine. Gaussian reconstruction is visual context; planning uses the explicit geometry proxy.",
+    }
+    _write_meta(capture_id, meta)
+    return _read_meta(capture_id)
+
+
+def get_capture(capture_id: str) -> dict[str, Any]:
+    meta = _read_meta(capture_id)
+    meta["backend"] = reconstruction_backend()
+    meta["splat_ready"] = (_capture_dir(capture_id) / "scene.splat").is_file()
+    log = _capture_dir(capture_id) / "reconstruction.log"
+    if log.is_file():
+        try:
+            lines = log.read_text(errors="replace").splitlines()
+            meta["log_tail"] = lines[-18:]
+        except OSError:
+            pass
+    return meta
+
+
+def splat_path(capture_id: str) -> Path:
+    path = _capture_dir(capture_id) / "scene.splat"
+    if not path.is_file():
+        raise ValueError("Gaussian splat is not ready yet")
+    return path
+
+
+def _tool_prefix() -> list[str]:
+    if not CONDA_ENV:
+        return []
+    conda = shutil.which("conda")
+    if not conda:
+        raise RuntimeError("AURA_SPLAT_NERFSTUDIO_ENV is set but conda is not on PATH")
+    return [conda, "run", "--no-capture-output", "-n", CONDA_ENV]
+
+
+def _run(args: list[str], log_path: Path, cwd: Path | None = None) -> None:
+    with log_path.open("a", encoding="utf-8") as log:
+        log.write("\n$ " + " ".join(shlex.quote(str(x)) for x in args) + "\n")
+        log.flush()
+        process = subprocess.run(args, cwd=str(cwd) if cwd else None, stdout=log, stderr=subprocess.STDOUT, check=False)
+        if process.returncode != 0:
+            raise RuntimeError(f"Reconstruction command failed with exit code {process.returncode}; see {log_path.name}")
+
+
+def _convert_gaussian_ply_to_splat(ply_path: Path, output_path: Path) -> int:
+    """Convert standard gsplat/Nerfstudio binary PLY to antimatter15 32-byte .splat.
+
+    The local browser renderer uses positions/scales/RGBA from this format. This
+    converter intentionally ignores higher-order spherical harmonics for the preview.
+    """
+    raw = ply_path.read_bytes()
+    end = raw.find(b"end_header\n")
+    if end < 0:
+        end = raw.find(b"end_header\r\n")
+        if end < 0:
+            raise ValueError("Gaussian PLY has no end_header")
+        header_end = end + len(b"end_header\r\n")
+    else:
+        header_end = end + len(b"end_header\n")
+    header = raw[:header_end].decode("ascii", errors="strict").splitlines()
+    if not any(line.strip() == "format binary_little_endian 1.0" for line in header):
+        raise ValueError("Aura currently converts binary_little_endian Gaussian PLY exports")
+
+    vertex_count = None
+    properties: list[str] = []
+    in_vertex = False
+    for line in header:
+        parts = line.strip().split()
+        if len(parts) >= 3 and parts[0] == "element":
+            in_vertex = parts[1] == "vertex"
+            if in_vertex:
+                vertex_count = int(parts[2])
+            elif properties:
+                break
+        elif in_vertex and len(parts) == 3 and parts[0] == "property":
+            if parts[1] != "float":
+                raise ValueError("Aura Gaussian PLY converter expects float vertex properties")
+            properties.append(parts[2])
+    if not vertex_count or not properties:
+        raise ValueError("Gaussian PLY has no vertex data")
+    required = ["x", "y", "z", "f_dc_0", "f_dc_1", "f_dc_2", "opacity", "scale_0", "scale_1", "scale_2"]
+    missing = [name for name in required if name not in properties]
+    if missing:
+        raise ValueError("Gaussian PLY is missing properties: " + ", ".join(missing))
+    count_values = vertex_count * len(properties)
+    values = np.frombuffer(raw, dtype="<f4", count=count_values, offset=header_end)
+    if values.size != count_values:
+        raise ValueError("Gaussian PLY vertex payload is truncated")
+    values = values.reshape(vertex_count, len(properties))
+    idx = {name: i for i, name in enumerate(properties)}
+
+    # Nerfstudio world space is Z-up; Aura/Three.js is Y-up. Convert exported
+    # camera reconstructions once here so the room, floor proxy and G1 viewer
+    # share the same up axis: (x, y, z)_NS -> (x, z, -y)_Aura.
+    raw_means = values[:, [idx["x"], idx["y"], idx["z"]]].astype(np.float32, copy=False)
+    means = np.stack((raw_means[:, 0], raw_means[:, 2], -raw_means[:, 1]), axis=1).astype(np.float32, copy=False)
+    log_scales = values[:, [idx["scale_0"], idx["scale_1"], idx["scale_2"]]].astype(np.float32, copy=False)
+    scales = np.exp(np.clip(log_scales, -12.0, 8.0)).astype(np.float32)
+    dc = values[:, [idx["f_dc_0"], idx["f_dc_1"], idx["f_dc_2"]]].astype(np.float32, copy=False)
+    rgb = np.clip(0.5 + _SH_C0 * dc, 0.0, 1.0)
+    logits = np.clip(values[:, idx["opacity"]], -20.0, 20.0)
+    alpha = 1.0 / (1.0 + np.exp(-logits))
+    valid = np.isfinite(means).all(axis=1) & np.isfinite(scales).all(axis=1) & (alpha > (1.0 / 255.0))
+    means, scales, rgb, alpha = means[valid], scales[valid], rgb[valid], alpha[valid]
+    if not len(means):
+        raise ValueError("Gaussian PLY contains no visible finite splats")
+
+    colors = np.empty((len(means), 4), dtype=np.uint8)
+    colors[:, :3] = np.round(rgb * 255.0).astype(np.uint8)
+    colors[:, 3] = np.round(np.clip(alpha, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+    if all(f"rot_{i}" in idx for i in range(4)):
+        quats = values[valid][:, [idx[f"rot_{i}"] for i in range(4)]].astype(np.float32, copy=False)
+        norms = np.linalg.norm(quats, axis=1, keepdims=True)
+        quats = quats / np.maximum(norms, 1e-8)
+        rotations = np.clip(quats * 128.0 + 128.0, 0.0, 255.0).astype(np.uint8)
+    else:
+        rotations = np.tile(np.asarray([128, 128, 128, 255], dtype=np.uint8), (len(means), 1))
+
+    record = np.dtype([("mean", "<f4", (3,)), ("scale", "<f4", (3,)), ("color", "u1", (4,)), ("rotation", "u1", (4,))])
+    packed = np.empty(len(means), dtype=record)
+    packed["mean"] = means
+    packed["scale"] = scales
+    packed["color"] = colors
+    packed["rotation"] = rotations
+    output_path.write_bytes(packed.tobytes())
+    return len(means)
+
+
+def _run_nerfstudio(capture_id: str, video: Path, directory: Path, output: Path, log_path: Path) -> int:
+    prefix = _tool_prefix()
+    processed = directory / "processed"
+    outputs = directory / "nerfstudio-outputs"
+    export_dir = directory / "export"
+    processed.mkdir(exist_ok=True)
+    outputs.mkdir(exist_ok=True)
+    export_dir.mkdir(exist_ok=True)
+
+    _write_meta(capture_id, {"status": "processing", "stage": "estimating camera poses", "progress": 0.18})
+    _run(prefix + ["ns-process-data", "video", "--data", str(video), "--output-dir", str(processed), "--num-frames-target", str(TARGET_FRAMES)], log_path)
+
+    _write_meta(capture_id, {"status": "processing", "stage": "training Gaussian splat", "progress": 0.42})
+    _run(prefix + [
+        "ns-train", "splatfacto", "--data", str(processed), "--output-dir", str(outputs),
+        "--max-num-iterations", str(TRAIN_STEPS), "--viewer.quit-on-train-completion", "True",
+    ], log_path)
+
+    configs = list(outputs.rglob("config.yml")) + list(outputs.rglob("config.yaml"))
+    if not configs:
+        raise RuntimeError("Nerfstudio training completed but no config.yml was found")
+    config = max(configs, key=lambda p: p.stat().st_mtime)
+
+    _write_meta(capture_id, {"status": "processing", "stage": "exporting Gaussian splat", "progress": 0.86})
+    _run(prefix + ["ns-export", "gaussian-splat", "--load-config", str(config), "--output-dir", str(export_dir)], log_path)
+    ply_files = list(export_dir.rglob("*.ply"))
+    if not ply_files:
+        raise RuntimeError("Nerfstudio export completed but no Gaussian .ply was found")
+    ply = max(ply_files, key=lambda p: p.stat().st_mtime)
+    _write_meta(capture_id, {"status": "processing", "stage": "converting web splat", "progress": 0.94})
+    return _convert_gaussian_ply_to_splat(ply, output)
+
+
+def _worker(capture_id: str) -> None:
+    directory = _capture_dir(capture_id)
+    meta = _read_meta(capture_id)
+    video = directory / str(meta["video_file"])
+    output = directory / "scene.splat"
+    log_path = directory / "reconstruction.log"
+    try:
+        backend = reconstruction_backend()
+        if not backend.get("available"):
+            raise RuntimeError("No Gaussian reconstruction backend is available: " + str(backend.get("detail") or "install Nerfstudio"))
+        _write_meta(capture_id, {"status": "processing", "stage": "starting reconstruction", "progress": 0.1, "error": None, "backend": backend})
+        if CUSTOM_COMMAND:
+            command = shlex.split(CUSTOM_COMMAND)
+            _write_meta(capture_id, {"stage": "running configured reconstruction", "progress": 0.25})
+            _run(command + [str(video), str(directory), str(output)], log_path, cwd=ROOT)
+            if not output.is_file():
+                raise RuntimeError("Configured reconstruction command completed without writing scene.splat")
+            splat_count = output.stat().st_size // 32
+        else:
+            splat_count = _run_nerfstudio(capture_id, video, directory, output, log_path)
+        _write_meta(capture_id, {
+            "status": "ready", "stage": "Gaussian scene ready", "progress": 1.0,
+            "splat_ready": True, "splat_file": output.name, "splat_bytes": output.stat().st_size,
+            "splat_count": int(splat_count), "finished_at": int(time.time()), "error": None,
+        })
+    except Exception as exc:
+        _write_meta(capture_id, {
+            "status": "error", "stage": "reconstruction failed", "progress": 0.0,
+            "splat_ready": False, "error": f"{type(exc).__name__}: {exc}",
+        })
+    finally:
+        with _JOBS_LOCK:
+            _JOBS.pop(capture_id, None)
+
+
+def start_reconstruction(capture_id: str, *, before_start: Callable[[], Any] | None = None) -> dict[str, Any]:
+    capture_id = _safe_id(capture_id)
+    meta = _read_meta(capture_id)
+    if meta.get("status") == "ready" and splat_path(capture_id).is_file():
+        return get_capture(capture_id)
+    backend = reconstruction_backend()
+    if not backend.get("available"):
+        raise RuntimeError(
+            "Camera capture was saved, but no Gaussian reconstruction backend is available. "
+            "Install Nerfstudio/Splatfacto or set AURA_SPLAT_RECON_COMMAND. " + str(backend.get("detail") or "")
+        )
+    with _JOBS_LOCK:
+        existing = _JOBS.get(capture_id)
+        if existing and existing.is_alive():
+            return get_capture(capture_id)
+        if before_start is not None:
+            before_start()
+        thread = threading.Thread(target=_worker, args=(capture_id,), daemon=True, name=f"aura-splat-{capture_id}")
+        _JOBS[capture_id] = thread
+        _write_meta(capture_id, {"status": "queued", "stage": "queued for Gaussian reconstruction", "progress": 0.08, "backend": backend, "error": None})
+        thread.start()
+    return get_capture(capture_id)
