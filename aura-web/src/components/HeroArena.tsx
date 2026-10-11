@@ -246,6 +246,7 @@ export function HeroArena({ live = false }: { live?: boolean }) {
   const sectionRef = useRef<HTMLElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<HeroArenaScene | null>(null)
+  const generatorRef = useRef<HTMLDivElement>(null)
   const [reduced] = useState(prefersReducedMotion)
   const { character } = useCharacter()
   const characterRef = useRef(character)
@@ -385,6 +386,17 @@ export function HeroArena({ live = false }: { live?: boolean }) {
       setTones(LIGHT)
     }
   }, [reduced, prefetchNext, live])
+
+  // The generator box sits under the canvas question, so the scene reserves its height (+12px gap above the vote bar's reserve).
+  useEffect(() => {
+    const el = generatorRef.current
+    const apply = () => sceneRef.current?.setBottomInset(el ? el.offsetHeight + 12 : 0)
+    apply()
+    if (!el || typeof ResizeObserver === 'undefined') return () => sceneRef.current?.setBottomInset(0)
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => { ro.disconnect(); sceneRef.current?.setBottomInset(0) }
+  }, [live, phase, reduced])
 
   useEffect(() => {
     sceneRef.current?.setCharacter(character).catch(() => {})
@@ -664,7 +676,7 @@ export function HeroArena({ live = false }: { live?: boolean }) {
       data-tone-mid={tones.A === tones.B ? tones.A : 'light'} aria-label="Motion A versus Motion B: pick the motion you prefer">
       <div ref={hostRef} className="hero-arena__canvas" aria-hidden="true" />
 
-      {live && <div className="hero-arena__generator" role="group" aria-label="Generate motions from text">
+      {live && <div ref={generatorRef} className={generating ? 'hero-arena__generator is-generating' : 'hero-arena__generator'} role="group" aria-label="Generate motions from text">
         <div className="hero-arena__generator-main">
           <label htmlFor="hero-motion-prompt">Generate a motion</label>
           <input
@@ -682,7 +694,7 @@ export function HeroArena({ live = false }: { live?: boolean }) {
         </div>
         <div className="hero-arena__generator-meta">
           <span className="hero-arena__candidate-limit">2 motions per generation</span>
-          <span className={generatorStatus?.cuda_available ? 'is-ready' : ''}>{generating ? 'AURA IS GENERATING' : generatorStatus?.cuda_available ? 'NVIDIA KIMODO READY' : 'GENERATOR OFFLINE'}</span>
+          <span className={generatorStatus?.cuda_available ? 'is-ready' : ''}>{generating ? 'Aura is generating' : generatorStatus?.cuda_available ? 'NVIDIA Kimodo ready' : 'Generator offline'}</span>
           {mode === 'generated' && <button type="button" className="hero-arena__starter-button" onClick={() => void installStarterPair()} disabled={busy}>Starter motions</button>}
         </div>
         {(generationMessage || generationError) && <div className={generationError ? 'hero-arena__generator-message is-error' : 'hero-arena__generator-message'}>{generationError || generationMessage}</div>}

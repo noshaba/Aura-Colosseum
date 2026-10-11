@@ -45,10 +45,18 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
   const { scrolled, collapsed } = useSmartNav()
   const [open, setOpen] = useState(false)
   const menu = useRef<HTMLDivElement | null>(null)
+  const burger = useRef<HTMLButtonElement | null>(null)
+  const panel = useRef<HTMLElement | null>(null)
+  // Closing hides the panel (inert), so focus inside it must move back to the burger
+  // first; otherwise it would be stranded in a hidden subtree.
+  const close = () => {
+    if (panel.current?.contains(document.activeElement)) burger.current?.focus({ preventScroll: true })
+    setOpen(false)
+  }
 
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     const onDown = (e: PointerEvent) => { if (!menu.current?.contains(e.target as Node)) setOpen(false) }
     window.addEventListener('keydown', onKey)
     window.addEventListener('pointerdown', onDown)
@@ -83,7 +91,7 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
     }
   }, [open])
 
-  const go =(id: Page) => { onPage(id); setOpen(false); window.scrollTo({ top: 0 }) }
+  const go =(id: Page) => { onPage(id); close(); window.scrollTo({ top: 0 }) }
   const cls = ['fx-nav', scrolled && 'is-scrolled', collapsed && 'is-collapsed', open && 'is-open'].filter(Boolean).join(' ')
   const walletLabel = walletAddress ? shortAddress(walletAddress) : 'Connect wallet'
 
@@ -98,18 +106,19 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
         {/* Always visible; the only character control in the nav. */}
         <CharacterSwitch />
         <div className="fx-nav__side" ref={menu}>
-          <button className="fx-nav__burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="fx-nav-panel" onClick={() => setOpen(v => !v)}>
+          <button ref={burger} className="fx-nav__burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="fx-nav-panel" onClick={() => setOpen(v => !v)}>
             <span className="fx-nav__burger-line is-top" />
             <span className="fx-nav__burger-line is-mid" />
             <span className="fx-nav__burger-line is-bottom" />
           </button>
-          <nav id="fx-nav-panel" className="fx-nav__panel" aria-label="Primary navigation" aria-hidden={!open}>
+          {/* inert (not aria-hidden) when closed: hidden from assistive tech AND unfocusable. */}
+          <nav ref={panel} id="fx-nav-panel" className="fx-nav__panel" aria-label="Primary navigation" {...(open ? {} : { inert: '' })}>
             {nav.map((item) => (
               <button key={item.id} tabIndex={open ? 0 : -1} className={page === item.id ? 'fx-nav__link fx-nav__pill is-current' : 'fx-nav__link fx-nav__pill'} onClick={() => go(item.id)}>
                 {item.label}
               </button>
             ))}
-            <button tabIndex={open ? 0 : -1} className={walletAddress ? 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta is-connected' : 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta'} onClick={() => { setOpen(false); onWallet() }}>
+            <button tabIndex={open ? 0 : -1} className={walletAddress ? 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta is-connected' : 'fx-btn fx-btn--primary fx-nav__pill fx-nav__cta'} onClick={() => { close(); onWallet() }}>
               <img className="fx-nav__cta-mark" src={`${base}brand/aura-mark.png`} alt="" aria-hidden="true" />
               <span>{walletLabel}</span>
             </button>
