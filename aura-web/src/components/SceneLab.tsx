@@ -376,7 +376,7 @@ export function SceneLab() {
 
     <section className="scene-lab-grid">
       <div className="scene-lab-viewer-card">
-        <div className="scene-lab-card-head"><div><span>01 · Visual scene</span><strong>Camera capture / Gaussian-splat preview</strong></div><div className="scene-lab-upload-actions">
+        <div className="scene-lab-card-head"><div><span>Visual scene</span><strong>Camera capture / Gaussian-splat preview</strong></div><div className="scene-lab-upload-actions">
           <button type="button" className="is-camera" onClick={() => { setCameraOpen(true); setError('') }} disabled={recording}>◉ Capture room</button>
           <button type="button" onClick={async () => {
             try {
@@ -458,7 +458,7 @@ export function SceneLab() {
       </div>
 
       <aside className="scene-lab-controls">
-        <div className="scene-lab-card-head"><div><span>02 · Planning proxy</span><strong>Floor + obstacle geometry</strong></div></div>
+        <div className="scene-lab-card-head"><div><span>Planning proxy</span><strong>Floor + obstacle geometry</strong></div></div>
         <ScenePlanSvg scene={scene} path={plan?.path} />
         <div className="scene-lab-fields compact">
           <label>Start X<input value={scene.start[0]} type="number" step="0.1" onChange={e => setScene(s => ({ ...s, start: [n(e.target.value, s.start[0]), s.start[1]] }))} /></label>
@@ -476,14 +476,14 @@ export function SceneLab() {
     </section>
 
     <section className="scene-lab-generate">
-      <div><span className="card-kicker">03 · GENERATE FOR THIS SCENE</span><h2>Kimodo motion. Aura scene path.</h2><p>Kimodo still creates the body motion. Aura bends only the global root trajectory onto the planned route and preserves the G1 joint animation as much as possible.</p></div>
+      <div><span className="card-kicker">GENERATE FOR THIS SCENE</span><h2>Kimodo motion. Aura scene path.</h2><p>Kimodo still creates the body motion. Aura bends only the global root trajectory onto the planned route and preserves the G1 joint animation as much as possible.</p></div>
       <div className="scene-lab-prompt"><label htmlFor="scene-prompt">Navigation prompt</label><textarea id="scene-prompt" rows={3} value={prompt} onChange={e => setPrompt(e.target.value)} /><button disabled={busy || !prompt.trim()} onClick={() => void generate()}>{busy ? 'Working…' : 'Generate 2 scene motions'}</button></div>
       {message && <p className="scene-lab-message">{message}</p>}
       {error && <p className="scene-lab-error">{error}</p>}
     </section>
 
     {motions.length > 0 && <section className="scene-lab-results">
-      <div className="scene-lab-results-head"><div><span className="card-kicker">04 · ROBOT TRAINING CANDIDATES</span><h2>Same scene. Two trajectories.</h2></div><p>These are saved back into the normal Aura motion library, so later A/B choices can train the same preference reward model.</p></div>
+      <div className="scene-lab-results-head"><div><span className="card-kicker">ROBOT TRAINING CANDIDATES</span><h2>Same scene. Two trajectories.</h2></div><p>These are saved back into the normal Aura motion library, so later A/B choices can train the same preference reward model.</p></div>
       <div className="scene-lab-motion-tabs">{motions.map((motion, index) => <button className={index === selected ? 'is-active' : ''} key={motion.id} onClick={() => setSelected(index)}><span>Motion {index === 0 ? 'A' : 'B'}</span><strong>{motion.name}</strong><small>{motion.scene_fit?.path_length_m?.toFixed(2) ?? plan?.path_length_m.toFixed(2)} m scene path</small></button>)}</div>
       {selectedMotion?.preview_file && <div className="scene-lab-result-player"><GeneratedG1RobotPreview key={selectedMotion.id} file={`/aura-api/files/${encodeURIComponent(selectedMotion.preview_file)}`} /></div>}
       <div className="scene-lab-evidence"><span>Generator</span><strong>NVIDIA Kimodo</strong><span>Scene adaptation</span><strong>{selectedMotion?.scene_fit?.method || 'Aura scene-fit'}</strong><span>Training meaning</span><strong>locomotion/navigation demonstration candidate</strong></div>

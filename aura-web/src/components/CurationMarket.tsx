@@ -83,7 +83,7 @@ export function CurationMarket(){
   }catch(e){setError(e instanceof Error?e.message:'Payout failed')}finally{setBusy(false)}}
 
   return <section className="curation-market" aria-label="Solana curation market">
-    <div className="card-kicker">06 / CURATION MARKET · SOLANA DEVNET</div><h2>Pay for judgment. <em>Keep the evidence.</em></h2>
+    <div className="card-kicker">CURATION MARKET · SOLANA DEVNET</div><h2><span>Pay for judgment.</span> <em>Keep the evidence.</em></h2>
     <p className="curation-intro">Requesters publish a motion-curation task, humans compare G1 candidates, and accepted curations are paid in SOL. The payout transaction also carries the curation evidence hash, and Aura verifies the transaction server-side before marking work paid. <strong>This demo uses direct requester-approved payouts, not escrow.</strong></p>
     {error&&<div className="generated-library-warning" role="alert">{error}</div>}{notice&&<p className="curation-notice" role="status">{notice}</p>}
     <div className="curation-wallet"><span>{wallet?`Wallet ${shortAddress(wallet.address)}`:'No wallet connected'}</span><button disabled={busy} onClick={()=>void connect().catch(e=>setError(e.message))}>{wallet?'Wallet connected':'Connect Phantom / Solflare'}</button></div>

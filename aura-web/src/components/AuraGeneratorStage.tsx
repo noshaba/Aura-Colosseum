@@ -384,7 +384,7 @@ export function AuraGeneratorStage() {
     <section className="aura-generator-stage" aria-label="Aura G1 generation and comparison">
       <div className="aura-generator-toolbar">
         <div>
-          <div className="card-kicker">01 / GENERATE &amp; COMPARE</div>
+          <div className="card-kicker">GENERATE &amp; COMPARE</div>
           <h2>One prompt. <em>Multiple possibilities.</em></h2>
           <p>Aura asks NVIDIA Kimodo for multiple G1 candidates, then puts them head-to-head. Your choice becomes real preference data for the Aura Motion Reward Model.</p>
         </div>
