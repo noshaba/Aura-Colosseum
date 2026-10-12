@@ -2453,3 +2453,6 @@ h1 em {
 @media (max-width: 650px) {
   .fx-page.fx-curation-page { padding: 120px 16px 80px; }
 }
+.benchmark-controls{grid-template-columns:minmax(0,1fr) minmax(0,.8fr) 110px 110px auto}
+.benchmark-selectors{width:100%;margin:0 0 16px;border-collapse:collapse;background:#fff;font-size:10.5px}.benchmark-selectors caption{text-align:left;padding:0 0 8px;font-size:10px;color:#77746a}.benchmark-selectors th,.benchmark-selectors td{padding:8px 10px;border:1px solid #ddd5c3;text-align:left}.benchmark-selectors th{font-weight:600;background:#fbfaf5}
+@media(max-width:900px){.benchmark-controls{grid-template-columns:1fr}.benchmark-selectors{display:block;overflow-x:auto}}

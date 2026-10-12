@@ -1,20 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python test_discovery.py
-python test_preference_integrity.py
-python test_starter_training.py
-python test_constraints.py
-python test_scene_lab.py
-python test_scene_capture.py
-python test_bounties.py
-python test_solana_verification.py
-python test_curation_api.py
-python test_downstream_benchmark.py
-python test_api.py
-python test_generator_api.py
-python test_generator_uniqueness.py
-python test_motion_prior.py
-python test_prior_api.py
-python test_reward_model.py
-python test_reward_api.py
+
+# Every test_*.py runs, so a new test file can't be forgotten. A file with no assertions
+# (e.g. empty) would "pass" without testing anything, so it fails the run instead.
+# Tests are either unittest classes or plain scripts asserting in main(): both assert.
+shopt -s nullglob
+tests=(test_*.py)
+if (( ${#tests[@]} == 0 )); then
+  echo "No test_*.py files found" >&2
+  exit 1
+fi
+for t in "${tests[@]}"; do
+  if [[ ! -s "$t" ]] || ! grep -qE '\bassert' "$t"; then
+    echo "FAIL: $t is empty or contains no assertions" >&2
+    exit 1
+  fi
+done
+for t in "${tests[@]}"; do
+  echo "== $t"
+  python "$t"
+done

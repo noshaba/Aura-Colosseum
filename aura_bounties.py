@@ -10,8 +10,11 @@ import json
 import re
 import sqlite3
 import time
+import base64
+import secrets
 import uuid
 import os
+from datetime import datetime, timezone
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -21,6 +24,8 @@ from aura_g1_metrics import canonical_bytes, sha256
 from aura_preference import add_preference, get_motion
 
 ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+CHALLENGE_TTL_S = 300
 SIG_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{64,96}$")
 SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
 MEMO_PROGRAM_ID = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
@@ -254,7 +259,118 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE curations ADD COLUMN payment_slot INTEGER")
     if "payment_verified_at" not in curation_cols:
         conn.execute("ALTER TABLE curations ADD COLUMN payment_verified_at INTEGER")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS wallet_challenges (
+        nonce TEXT PRIMARY KEY,
+        wallet TEXT NOT NULL,
+        action TEXT NOT NULL,
+        bounty_id TEXT NOT NULL,
+        payload_sha256 TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+    )"""
+    )
     conn.commit()
+
+
+# ---- Wallet-signed actions --------------------------------------------------------------
+# A wallet address in a request proves nothing: anyone can type any address. Curating and
+# closing a bounty therefore need a signature from that wallet over a one-time challenge
+# that names the exact action, so a fresh made-up address per vote can't inflate training
+# data, and only the requester can close their bounty.
+
+def b58decode(value: str) -> bytes:
+    n = 0
+    for ch in value:
+        idx = B58_ALPHABET.find(ch)
+        if idx < 0:
+            raise ValueError("Invalid base58 character")
+        n = n * 58 + idx
+    raw = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return b"\0" * (len(value) - len(value.lstrip("1"))) + raw
+
+
+def b58encode(data: bytes) -> str:
+    n = int.from_bytes(data, "big")
+    out = ""
+    while n:
+        n, rem = divmod(n, 58)
+        out = B58_ALPHABET[rem] + out
+    return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
+
+
+def _action_payload(action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The fields a signature commits to, validated and normalized."""
+    bounty_id = _text(payload.get("bounty_id", ""), "bounty_id", 80)
+    if action == "curate":
+        out = {"action": action, "bounty_id": bounty_id,
+               "wallet": _wallet(payload.get("curator_wallet"), "curator_wallet"),
+               "left_id": _text(payload.get("left_id", ""), "left_id", 120),
+               "right_id": _text(payload.get("right_id", ""), "right_id", 120),
+               "winner_id": _text(payload.get("winner_id", ""), "winner_id", 120)}
+        if out["left_id"] == out["right_id"] or out["winner_id"] not in (out["left_id"], out["right_id"]):
+            raise ValueError("Choose two different motions and one winner")
+        return out
+    if action == "close":
+        return {"action": action, "bounty_id": bounty_id,
+                "wallet": _wallet(payload.get("requester_wallet"), "requester_wallet")}
+    raise ValueError("action must be 'curate' or 'close'")
+
+
+def _challenge_message(p: dict[str, Any], nonce: str, expires_at: int) -> str:
+    # Human-readable: this is the text the wallet shows before signing.
+    expires = datetime.fromtimestamp(expires_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    if p["action"] == "curate":
+        body = [f"Aura curation vote for bounty {p['bounty_id']}",
+                f"Pair: {p['left_id']} vs {p['right_id']}", f"Winner: {p['winner_id']}"]
+    else:
+        body = [f"Aura: close bounty {p['bounty_id']}"]
+    return "\n".join(body + [f"Wallet: {p['wallet']}", f"Nonce: {nonce}", f"Expires: {expires}"])
+
+
+def create_wallet_challenge(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_tables(conn)
+    p = _action_payload(str(payload.get("action", "")), payload)
+    bounty = get_bounty(conn, p["bounty_id"])
+    if p["action"] == "close" and p["wallet"] != bounty["requester_wallet"]:
+        raise ValueError("Only the bounty requester can close this bounty")
+    nonce = secrets.token_hex(16)
+    created = _now()
+    expires = created + CHALLENGE_TTL_S
+    message = _challenge_message(p, nonce, expires)
+    conn.execute(
+        "INSERT INTO wallet_challenges(nonce,wallet,action,bounty_id,payload_sha256,message,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+        (nonce, p["wallet"], p["action"], p["bounty_id"], sha256(canonical_bytes(p)), message, created, expires),
+    )
+    conn.commit()
+    return {"nonce": nonce, "message": message, "expires_at": expires}
+
+
+def _consume_wallet_signature(conn: sqlite3.Connection, action: str, payload: dict[str, Any]) -> None:
+    """Verify the signed challenge for exactly this action and mark it used.
+    Call inside the caller's write transaction so use and effect commit together."""
+    from nacl.exceptions import BadSignatureError
+    from nacl.signing import VerifyKey
+
+    p = _action_payload(action, payload)
+    nonce = str(payload.get("challenge_nonce") or "")
+    row = conn.execute("SELECT * FROM wallet_challenges WHERE nonce=?", (nonce,)).fetchone()
+    if not row:
+        raise ValueError("Sign a fresh wallet challenge for this action first")
+    if row["used_at"] is not None:
+        raise ValueError("This wallet challenge was already used; sign a new one")
+    if row["expires_at"] < _now():
+        raise ValueError("This wallet challenge expired; sign a new one")
+    if row["action"] != action or row["wallet"] != p["wallet"] or row["payload_sha256"] != sha256(canonical_bytes(p)):
+        raise ValueError("The signed challenge does not match this request")
+    try:
+        signature = base64.b64decode(str(payload.get("wallet_signature") or ""), validate=True)
+        VerifyKey(b58decode(p["wallet"])).verify(row["message"].encode("utf-8"), signature)
+    except (BadSignatureError, ValueError, TypeError):
+        raise ValueError("Wallet signature is invalid for this wallet and challenge")
+    conn.execute("UPDATE wallet_challenges SET used_at=? WHERE nonce=?", (_now(), nonce))
 
 
 def create_bounty(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -352,13 +468,40 @@ def curate(conn: sqlite3.Connection, base: Path, payload: dict[str, Any]) -> dic
     if left_prompt and left_prompt != str(bounty['prompt']).strip()[:100]:
         raise ValueError('Selected motions do not belong to this bounty prompt')
     ordered_left, ordered_right = sorted((left_id, right_id))
-    # UNIQUE treats order canonically so A/B reversal cannot create a duplicate paid task.
-    if conn.execute(
-        "SELECT 1 FROM curations WHERE bounty_id=? AND curator_wallet=? AND ((left_id=? AND right_id=?) OR (left_id=? AND right_id=?))",
-        (bounty_id, curator, ordered_left, ordered_right, ordered_right, ordered_left),
-    ).fetchone():
-        raise ValueError("This curator already evaluated this pair for the bounty")
-    pref = add_preference(conn, base, left_id, right_id, winner_id, f"Bounty {bounty_id}: {bounty['criterion']}", f"wallet:{curator}")
+    # One write transaction for the checks and both inserts: BEGIN IMMEDIATE takes SQLite's
+    # write lock, so two curations can't both pass the target-count check, and a failure
+    # can't leave a vote without its curation row (or the reverse).
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Re-check under the lock (get_bounty would commit via ensure_tables, so query directly).
+        row = conn.execute(
+            "SELECT b.status, b.target_curations, (SELECT COUNT(*) FROM curations c WHERE c.bounty_id=b.id) n "
+            "FROM bounties b WHERE b.id=?", (bounty_id,),
+        ).fetchone()
+        if row["status"] != "open":
+            raise ValueError("Bounty is not open")
+        if int(row["n"]) >= int(row["target_curations"]):
+            raise ValueError("This bounty has already reached its target number of curations")
+        # UNIQUE treats order canonically so A/B reversal cannot create a duplicate paid task.
+        if conn.execute(
+            "SELECT 1 FROM curations WHERE bounty_id=? AND curator_wallet=? AND ((left_id=? AND right_id=?) OR (left_id=? AND right_id=?))",
+            (bounty_id, curator, ordered_left, ordered_right, ordered_right, ordered_left),
+        ).fetchone():
+            raise ValueError("This curator already evaluated this pair for the bounty")
+        _consume_wallet_signature(conn, "curate", payload)
+        pref = add_preference(conn, base, left_id, right_id, winner_id, f"Bounty {bounty_id}: {bounty['criterion']}",
+                              f"wallet:{curator}", commit=False)
+        curation_id = _insert_curation(conn, bounty, bounty_id, curator, left_id, right_id, winner_id, pref)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    return get_curation(conn, curation_id)
+
+
+def _insert_curation(conn, bounty, bounty_id, curator, left_id, right_id, winner_id, pref) -> int:
     evidence = {
         "bounty_id": bounty_id,
         "preference_id": pref["id"],
@@ -375,8 +518,7 @@ def curate(conn: sqlite3.Connection, base: Path, payload: dict[str, Any]) -> dic
         "INSERT INTO curations(bounty_id,preference_id,curator_wallet,left_id,right_id,winner_id,evidence_sha256,created_at) VALUES(?,?,?,?,?,?,?,?)",
         (bounty_id, pref["id"], curator, left_id, right_id, winner_id, evidence_hash, created),
     )
-    conn.commit()
-    return get_curation(conn, int(cur.lastrowid))
+    return int(cur.lastrowid)
 
 
 def get_curation(conn: sqlite3.Connection, curation_id: int) -> dict[str, Any]:
@@ -425,9 +567,21 @@ def record_payment(conn: sqlite3.Connection, payload: dict[str, Any], rpc_url: s
     return get_curation(conn, curation_id)
 
 
-def close_bounty(conn: sqlite3.Connection, bounty_id: str) -> dict[str, Any]:
-    if not conn.execute("SELECT 1 FROM bounties WHERE id=?", (bounty_id,)).fetchone():
-        raise ValueError("Bounty not found")
-    conn.execute("UPDATE bounties SET status='closed',closed_at=? WHERE id=?", (_now(), bounty_id))
-    conn.commit()
+def close_bounty(conn: sqlite3.Connection, payload: dict[str, Any]) -> dict[str, Any]:
+    """Close a bounty. Needs the requester wallet's signature over a 'close' challenge."""
+    ensure_tables(conn)
+    bounty_id = _text(payload.get("bounty_id", ""), "bounty_id", 80)
+    bounty = get_bounty(conn, bounty_id)
+    if _wallet(payload.get("requester_wallet"), "requester_wallet") != bounty["requester_wallet"]:
+        raise ValueError("Only the bounty requester can close this bounty")
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        _consume_wallet_signature(conn, "close", payload)
+        conn.execute("UPDATE bounties SET status='closed',closed_at=? WHERE id=?", (_now(), bounty_id))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
     return get_bounty(conn, bounty_id)

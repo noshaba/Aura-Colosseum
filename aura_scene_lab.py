@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
+from aura_io import atomic_write_bytes, atomic_write_text
 
 SCENE_METHOD = "aura-scene-root-path-fit-v1"
 DEFAULT_SCENE = {
@@ -295,7 +296,7 @@ def fit_motion_to_scene(base: Path, item: dict[str, Any], plan: dict[str, Any]) 
 
     original_hash = str(item.get("native_sha256") or _native_sha256(native))
     np.savez(native, **arrays)
-    preview.write_bytes(g1_preview_bytes(fitted, float(item.get("fps", 30.0)), fitted_global))
+    atomic_write_bytes(preview, g1_preview_bytes(fitted, float(item.get("fps", 30.0)), fitted_global))
     fitted_hash = _native_sha256(native)
     item = dict(item)
     item["pre_scene_native_sha256"] = original_hash
@@ -309,7 +310,7 @@ def fit_motion_to_scene(base: Path, item: dict[str, Any], plan: dict[str, Any]) 
         "geometry_proxy": plan["scene"],
         "claim": "Root-path adaptation against an explicit kinematic geometry proxy; not physics simulation or contact-rich scene interaction.",
     }
-    (base / f"{item['id']}.json").write_text(json.dumps(item, indent=2))
+    atomic_write_text(base / f"{item['id']}.json", json.dumps(item, indent=2))
     return item
 
 

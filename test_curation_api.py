@@ -6,8 +6,10 @@ import numpy as np
 from aura_g1_metrics import report_for_npz
 from aura_bounties import SYSTEM_PROGRAM_ID, MEMO_PROGRAM_ID
 from test_solana_verification import b58encode, memo_ix, transfer_ix, tx_result
+from wallet_test_utils import TestWallet
 
-A='11111111111111111111111111111111'; B='So11111111111111111111111111111111111111112'
+CURATOR=TestWallet(7)  # a real keypair: curations must be signed by the curator wallet
+A='11111111111111111111111111111111'; B=CURATOR.address
 SIG_POST='2'*64; SIG_PAY='3'*64
 RPC_RESULTS={}
 
@@ -43,7 +45,9 @@ class CurationApi(unittest.TestCase):
           RPC_RESULTS[SIG_POST]=tx_result([A,MEMO_PROGRAM_ID],[memo_ix(1,0,post_memo)],signature=SIG_POST,slot=111)
           posted=post('/bounties/post-signature',{'bounty_id':b['id'],'signature':SIG_POST})
           self.assertEqual(posted['posted_slot'],111);self.assertTrue(posted['posted_verified_at'])
-          c=post('/bounties/curate',{'bounty_id':b['id'],'curator_wallet':B,'left_id':'m0','right_id':'m1','winner_id':'m1'})
+          vote={'bounty_id':b['id'],'curator_wallet':B,'left_id':'m0','right_id':'m1','winner_id':'m1'}
+          challenge=post('/bounties/challenge',{**vote,'action':'curate'})
+          c=post('/bounties/curate',{**vote,'challenge_nonce':challenge['nonce'],'wallet_signature':CURATOR.sign(challenge['message'])})
           pay_memo={'app':'AURA','v':1,'kind':'curation-payout','bountyId':b['id'],'curationId':c['id'],'evidenceSha256':c['evidence_sha256'],'paidLamports':1000000}
           keys=[A,B,SYSTEM_PROGRAM_ID,MEMO_PROGRAM_ID]
           RPC_RESULTS[SIG_PAY]=tx_result(keys,[transfer_ix(2,0,1,1000000),memo_ix(3,0,pay_memo)],signature=SIG_PAY,slot=222,pre_balances=[10000000,2000000,0,0],post_balances=[8995000,3000000,0,0])

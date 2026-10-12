@@ -23,7 +23,8 @@ from typing import Any
 import numpy as np
 
 from aura_g1_metrics import canonical_bytes, sha256
-from aura_preference import get_motion, validated_preferences
+from aura_preference import get_motion, motion_level_split, split_unit_lookup, validated_preferences
+from aura_io import atomic_write_text
 
 VERSION = "aura-motion-reward-transformer-v1"
 MODEL_BASENAME = "aura-motion-reward-v1"
@@ -160,27 +161,6 @@ def _make_model(input_dim: int):
     return AuraMotionRewardNet()
 
 
-def _pair_split(preferences: list[dict[str, Any]]):
-    """Deterministic unordered-pair split; repeated A/B votes never leak across sets."""
-    groups: dict[tuple[str, str], list[int]] = {}
-    for i, r in enumerate(preferences):
-        key = r.get("pair_key") or tuple(sorted((r["left_id"], r["right_id"])))
-        groups.setdefault(key, []).append(i)
-    can_holdout = len(preferences) >= 10 and len(groups) >= 4
-    if not can_holdout:
-        return list(range(len(preferences))), []
-    keys = sorted(groups)
-    rng = np.random.default_rng(117)
-    rng.shuffle(keys)
-    hold_count = max(1, len(keys) // 5)
-    val_keys = set(keys[-hold_count:])
-    val = [i for k in keys if k in val_keys for i in groups[k]]
-    train = [i for k in keys if k not in val_keys for i in groups[k]]
-    if len(train) < MIN_COMPARISONS:
-        return list(range(len(preferences))), []
-    return train, val
-
-
 def _valid_preferences(conn, base: Path):
     valid, diagnostics = validated_preferences(conn, base)
     sequences: dict[str, np.ndarray] = {}
@@ -255,7 +235,7 @@ def train_reward_model(conn, base: Path, epochs: int = DEFAULT_EPOCHS):
             f"Generate a fresh batch; repeated file hashes do not count twice."
         )
 
-    train_idx, val_idx = _pair_split(valid)
+    train_idx, val_idx, split = motion_level_split(valid, split_unit_lookup(base), seed=117, min_train=MIN_COMPARISONS)
     train_motion_ids = {mid for i in train_idx for mid in (valid[i]["left_id"], valid[i]["right_id"])}
     mean, std = _normalization(sequences, train_motion_ids)
     input_dim = int(next(iter(sequences.values())).shape[1])
@@ -331,13 +311,14 @@ def train_reward_model(conn, base: Path, epochs: int = DEFAULT_EPOCHS):
         "heldout_pair_accuracy": round(float(val_acc), 4) if val_acc is not None else None,
         "heldout_pair_log_loss": round(float(val_loss), 5) if val_loss is not None else None,
         "heldout_pair_count": len(val_idx),
+        "split": split,
         "source_motion_ids": motion_ids,
         "dataset_sha256": sha256(canonical_bytes(valid)),
         "model_sha256": model_sha,
         "feature_method": "root-relative G1 joint positions + joint velocities + root velocity + root height + optional global joint rotations in 6D representation",
         "caveat": "Aura learns a human-preference reward over saved G1 trajectories. It is not physical safety validation, simulator task success, or full RLHF because no generator/policy is optimized with reinforcement learning against this reward.",
     }
-    meta_path.write_text(json.dumps(result, indent=2))
+    atomic_write_text(meta_path, json.dumps(result, indent=2))
     return {"model": result, "scores": score_all(base)}
 
 

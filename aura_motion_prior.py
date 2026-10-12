@@ -20,6 +20,7 @@ import numpy as np
 
 from aura_g1_metrics import canonical_bytes, sha256
 from aura_preference import get_motion, validated_preferences
+from aura_io import atomic_write_text
 
 VERSION = "aura-amp-inspired-prior-v1"
 MODEL_BASENAME = "aura-motion-prior-v1"
@@ -215,7 +216,7 @@ def train_prior(conn, base: Path, epochs: int = 260):
         "feature_method": "root-relative G1 joint pose + joint velocity + root velocity + root height over local transitions",
         "caveat": "Learned preference-derived motion prior only. It is not full AMP, physics simulation, dynamic stability, task success, or real-robot safety validation.",
     }
-    meta_path.write_text(json.dumps(result, indent=2))
+    atomic_write_text(meta_path, json.dumps(result, indent=2))
     return {"model": result, "scores": score_all(base, metadata=result)}
 
 

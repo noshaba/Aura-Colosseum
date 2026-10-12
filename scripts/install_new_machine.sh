@@ -44,6 +44,7 @@ export PYTHONNOUSERSITE=1
 python -m pip install -U pip setuptools wheel
 conda install -c conda-forge cffi libsndfile -y
 python -m pip install -U huggingface_hub soundfile
+python -m pip install pynacl==1.5.0  # ed25519 verification of wallet-signed curations
 
 if python - <<'PY' >/dev/null 2>&1
 import torch

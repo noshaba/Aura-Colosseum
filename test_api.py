@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,12 @@ from pathlib import Path
 from urllib.request import urlopen, Request
 import numpy as np
 from aura_g1_metrics import report_for_npz
+
+def _free_port():
+    # Its own port, so a running Aura API on 8765 can't answer in place of the test server.
+    with socket.socket() as s:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()[1]
 
 class ApiTest(unittest.TestCase):
     def test_http_integration(self):
@@ -20,12 +27,13 @@ class ApiTest(unittest.TestCase):
                 entry={'id':f'motion{i}','name':'Walk forward','model':'G1','fps':30,'native_file':file.name,'preview_file':None,'kinematic_evaluation':report_for_npz(file,30)}
                 (base/f'motion{i}.json').write_text(json.dumps(entry))
                 (base/f'motion{i}.g1.json').write_text('{}')
-            env={**os.environ,'AURA_MOTION_LIBRARY':temp}
+            port=_free_port();api=f'http://127.0.0.1:{port}'
+            env={**os.environ,'AURA_MOTION_LIBRARY':temp,'AURA_LIBRARY_PORT':str(port)}
             server=subprocess.Popen([sys.executable,'aura_library_server.py'],env=env,cwd=Path(__file__).parent,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
             try:
                 for attempt in range(40):
                     try:
-                        with urlopen('http://127.0.0.1:8765/motions',timeout=1) as f:
+                        with urlopen(api+'/motions',timeout=1) as f:
                             motions=json.load(f)
                         break
                     except Exception:time.sleep(.1)
@@ -33,7 +41,7 @@ class ApiTest(unittest.TestCase):
                 self.assertEqual(len(motions),3) # preview JSON should not become motion entries
                 def post(path,payload):
                     data=json.dumps(payload).encode()
-                    with urlopen(Request('http://127.0.0.1:8765'+path,data=data,headers={'Content-Type':'application/json'}),timeout=5) as f:return json.load(f)
+                    with urlopen(Request(api+path,data=data,headers={'Content-Type':'application/json'}),timeout=5) as f:return json.load(f)
                 saved=post('/preferences',{'left_id':'motion0','right_id':'motion1','winner_id':'motion0','context':'walking forward','evaluator_id':'test:0'})
                 self.assertEqual(len(saved['evidence_sha256']),64)
                 votes_to_add=[
@@ -47,14 +55,14 @@ class ApiTest(unittest.TestCase):
                     post('/preferences',{'left_id':left,'right_id':right,'winner_id':winner,'context':'walking forward','evaluator_id':evaluator})
                 trained=post('/train',{})
                 self.assertEqual(trained['training_count'],6)
-                with urlopen('http://127.0.0.1:8765/rankings') as f: ranked=json.load(f)
+                with urlopen(api+'/rankings') as f: ranked=json.load(f)
                 self.assertEqual(len(ranked['rankings']),3)
-                with urlopen('http://127.0.0.1:8765/preferences') as f: votes=json.load(f)
+                with urlopen(api+'/preferences') as f: votes=json.load(f)
                 self.assertEqual(len(votes['preferences']),6)
-                with urlopen('http://127.0.0.1:8765/preferences/diagnostics') as f: diagnostics=json.load(f)
+                with urlopen(api+'/preferences/diagnostics') as f: diagnostics=json.load(f)
                 self.assertEqual(diagnostics['valid_comparison_count'],6)
                 self.assertEqual(diagnostics['duplicate_comparison_count'],0)
-                with urlopen('http://127.0.0.1:8765/constraints/presets') as f: presets=json.load(f)
+                with urlopen(api+'/constraints/presets') as f: presets=json.load(f)
                 self.assertGreaterEqual(len(presets['presets']),3)
                 constraint_report=post('/constraints/evaluate',{'motion_ids':['motion0','motion1','motion2'],'constraints':{'max_root_height_range_m':0.5,'max_below_floor_fraction':0.5}})
                 self.assertEqual(constraint_report['candidate_count'],3)

@@ -1,8 +1,8 @@
 """Aura downstream imitation benchmark.
 
-Compares a preference-ranked subset of saved G1 motions against equally sized random
-subsets under the same fixed kinematic behavior-cloning learner and a disjoint held-out
-cohort. This is an *offline kinematic imitation proxy*, not physics simulation and not a
+Compares the training subset picked by a selector (by default the Aura reward model) with
+equally sized random subsets and two training-free baselines, under the same fixed kinematic
+behavior-cloning learner and a disjoint, selector-unseen held-out cohort. This is an *offline kinematic imitation proxy*, not physics simulation and not a
 real-robot task-success benchmark.
 
 The learner predicts the next frame's root displacement and root-relative joint motion
@@ -24,6 +24,7 @@ import numpy as np
 
 from aura_g1_metrics import canonical_bytes, sha256
 from aura_preference import connect, latest, rank
+from aura_io import atomic_write_text
 
 VERSION = "aura-offline-imitation-v1"
 METRIC_KEYS = (
@@ -252,12 +253,21 @@ def evaluate_policy(policy: RidgeMotionPolicy, test: list[MotionSequence], horiz
     }
 
 
-def _fit_and_eval(train: list[MotionSequence], test: list[MotionSequence], samples_per_motion: int, horizon_s: float) -> dict:
+def _fit_policy(train: list[MotionSequence], samples_per_motion: int) -> tuple[RidgeMotionPolicy, int]:
     x, y = _training_data(train, samples_per_motion)
     policy = RidgeMotionPolicy(alpha=1.0)
     policy.fit(x, y)
+    return policy, int(len(x))
+
+
+def _fit_and_eval(train: list[MotionSequence], test: list[MotionSequence], samples_per_motion: int, horizon_s: float) -> dict:
+    """Pooled metrics over the whole held-out set, plus the same metrics per held-out motion
+    (`per_motion`, in test order) for the bootstrap."""
+    policy, transitions = _fit_policy(train, samples_per_motion)
     out = evaluate_policy(policy, test, horizon_s=horizon_s)
-    out["training_transitions"] = int(len(x))
+    out["training_transitions"] = transitions
+    per = [evaluate_policy(policy, [seq], horizon_s=horizon_s) for seq in test]
+    out["per_motion"] = {key: [p[key] for p in per] for key in METRIC_KEYS}
     return out
 
 
@@ -279,13 +289,147 @@ def _heldout_ids(ids: list[str], count: int, seed: int) -> list[str]:
     return ordered[:count]
 
 
+# ---- Selectors -------------------------------------------------------------------------
+# A selector scores training-pool motions (higher = picked first). Learned selectors also
+# report which motions they were trained on, so the held-out set can exclude them.
+
+SELECTORS = ("reward_transformer", "logistic")
+BASELINES = ("kinematic_heuristic", "cohort_centroid")
+MIN_HOLDOUT = 6
+BOOTSTRAP_SAMPLES = 2000
+
+SELECTOR_LABELS = {
+    "reward_transformer": "Aura reward model (temporal Transformer)",
+    "logistic": "Pairwise logistic over 6 kinematic features",
+    "kinematic_heuristic": "Kinematic heuristic: least foot slide and floor penetration (no learning)",
+    "cohort_centroid": "Cohort centroid: most typical motions of the pool (no learning)",
+}
+
+
+def selector_status(base: Path, db: Path) -> dict[str, dict]:
+    """Per learned selector: is it trained, which version, which motions has it seen.
+    Reads saved metadata only, so it works without PyTorch."""
+    from aura_reward_model import _paths
+
+    with connect(db) as conn:
+        logistic = latest(conn)
+    reward = None
+    meta_path = _paths(base)[1]
+    if meta_path.is_file():
+        try:
+            reward = json.loads(meta_path.read_text())
+        except (OSError, ValueError):
+            reward = None
+    out = {}
+    for name, meta in (("reward_transformer", reward), ("logistic", logistic)):
+        out[name] = {
+            "label": SELECTOR_LABELS[name],
+            "trained": bool(meta),
+            "version": (meta or {}).get("version"),
+            "seen_motion_ids": sorted((meta or {}).get("source_motion_ids") or []),
+        }
+    return out
+
+
+def _learned_selector(selector: str, db: Path, base: Path) -> tuple[dict[str, float], dict]:
+    """Scores for every cohort motion from a trained selector, plus its provenance."""
+    if selector == "logistic":
+        with connect(db) as conn:
+            model = latest(conn)
+            if not model:
+                raise ValueError("Train the pairwise logistic preference model before benchmarking it")
+            ranked = rank(conn, base)["rankings"]
+        scores = {r["id"]: float(r["ranking_signal"]) for r in ranked}
+        return scores, {"version": model.get("version"), "dataset_sha256": model.get("dataset_sha256"),
+                        "seen_motion_ids": list(model.get("source_motion_ids") or [])}
+    if selector == "reward_transformer":
+        import aura_reward_model as reward  # PyTorch is only needed for this selector
+
+        loaded = reward._load(base)
+        meta = loaded[0]
+        if meta is None:
+            raise ValueError("Train the Aura reward model before benchmarking it")
+        scores = {}
+        for record in motion_records(base):
+            try:
+                value = reward.score_motion(base, str(record["id"]), loaded)
+            except (ValueError, KeyError, OSError, TypeError):
+                continue
+            if value is not None:
+                scores[str(record["id"])] = float(value)
+        return scores, {"version": meta.get("version"), "dataset_sha256": meta.get("dataset_sha256"),
+                        "seen_motion_ids": list(meta.get("source_motion_ids") or [])}
+    raise ValueError(f"Unknown selector {selector!r}; choose one of {', '.join(SELECTORS)}")
+
+
+def _heuristic_scores(base: Path, ids: list[str]) -> dict[str, float]:
+    """Lower toe speed near the floor and less floor penetration score higher (z-scored in the pool)."""
+    from aura_preference import get_motion
+
+    toe, below = [], []
+    for mid in ids:
+        report = get_motion(base, mid)["kinematic_evaluation"]["report"]
+        toe.append(float(report.get("near_floor_toe_speed_m_s") or 0.0))
+        below.append(float(report.get("estimated_below_floor_fraction") or 0.0))
+
+    def z(values):
+        arr = np.asarray(values, dtype=float)
+        return (arr - arr.mean()) / max(float(arr.std()), 1e-9)
+    score = -(z(toe) + z(below))
+    return {mid: float(v) for mid, v in zip(ids, score)}
+
+
+def _centroid_features(seq: MotionSequence, frames: int = 32) -> np.ndarray:
+    p = seq.positions
+    t = np.linspace(0, len(p) - 1, frames)
+    lo = np.floor(t).astype(int)
+    hi = np.minimum(lo + 1, len(p) - 1)
+    w = (t - lo)[:, None, None]
+    r = p[lo] * (1 - w) + p[hi] * w
+    root = r[:, 0]
+    rel = r[:, 1:] - root[:, None, :]
+    return np.concatenate([rel.reshape(-1), (root - root[0]).reshape(-1)])
+
+
+def _centroid_scores(seqs: dict[str, MotionSequence], ids: list[str]) -> dict[str, float]:
+    """Closer to the pool's mean trajectory scores higher: the "typical, not better" control."""
+    feats = np.stack([_centroid_features(seqs[mid]) for mid in ids])
+    centroid = feats.mean(axis=0)
+    dist = np.linalg.norm(feats - centroid, axis=1)
+    return {mid: float(-d) for mid, d in zip(ids, dist)}
+
+
+def _bootstrap_vs_random(selected: dict, random_per_motion: dict, seed: int) -> dict:
+    """Per held-out motion, how much lower the selector's error is than the random mean;
+    a 95% bootstrap interval over held-out motions decides the verdict."""
+    rng = np.random.default_rng(seed)
+    out = {}
+    for key in METRIC_KEYS:
+        sel = np.asarray(selected["per_motion"][key], dtype=float)
+        rnd = np.asarray(random_per_motion[key], dtype=float)
+        diff = rnd - sel  # cm; positive means the selector's training set imitates better
+        samples = rng.integers(0, len(diff), size=(BOOTSTRAP_SAMPLES, len(diff)))
+        boot = diff[samples].mean(axis=1)
+        lo, hi = np.percentile(boot, [2.5, 97.5])
+        verdict = "better than random" if lo > 0 else "worse than random" if hi < 0 else "no evidence of a difference"
+        random_mean = float(rnd.mean())
+        out[key] = {
+            "error_reduction_cm": round(float(diff.mean()), 4),
+            "ci95_cm": [round(float(lo), 4), round(float(hi), 4)],
+            "relative_improvement_pct": round(float(diff.mean()) / random_mean * 100.0, 2) if random_mean > 1e-12 else 0.0,
+            "verdict": verdict,
+        }
+    return out
+
+
 def run_benchmark(
     base: Path,
     db: Path,
     *,
     cohort_name: str,
-    train_count: int = 4,
-    holdout_count: int = 2,
+    selector: str = "reward_transformer",
+    train_count: int = 6,
+    holdout_count: int = MIN_HOLDOUT,
     random_trials: int = 20,
     samples_per_motion: int = 100,
     horizon_s: float = 0.5,
@@ -294,6 +438,9 @@ def run_benchmark(
     if not isinstance(cohort_name, str) or not cohort_name.strip():
         raise ValueError("Choose a same-prompt motion cohort")
     cohort_name = cohort_name.strip()
+    selector = str(selector or "reward_transformer")
+    if selector not in SELECTORS:
+        raise ValueError(f"Unknown selector {selector!r}; choose one of {', '.join(SELECTORS)}")
     train_count = int(train_count)
     holdout_count = int(holdout_count)
     random_trials = int(random_trials)
@@ -302,8 +449,8 @@ def run_benchmark(
     horizon_s = float(horizon_s)
     if not 2 <= train_count <= 12:
         raise ValueError("train_count must be between 2 and 12")
-    if not 1 <= holdout_count <= 6:
-        raise ValueError("holdout_count must be between 1 and 6")
+    if not MIN_HOLDOUT <= holdout_count <= 12:
+        raise ValueError(f"holdout_count must be between {MIN_HOLDOUT} and 12: fewer held-out motions can't support a confidence interval")
     if not 3 <= random_trials <= 50:
         raise ValueError("random_trials must be between 3 and 50")
     if not 20 <= samples_per_motion <= 200:
@@ -315,24 +462,20 @@ def run_benchmark(
     if len(records) < train_count + holdout_count + 1:
         raise ValueError(
             f"Need at least {train_count + holdout_count + 1} G1 motions with exactly this prompt "
-            "so Aura and random selection are not forced to use the same training set"
+            f"({train_count} to train on, {holdout_count} held out, 1 spare so random selection can differ); "
+            f"this cohort has {len(records)}"
         )
     seqs = {str(r["id"]): load_sequence(base, r) for r in records}
     usable_ids = sorted(seqs)
 
-    with connect(db) as conn:
-        model = latest(conn)
-        if not model:
-            raise ValueError("Train the human preference model before running the downstream benchmark")
-        ranked = rank(conn, base)["rankings"]
-    rank_signal = {r["id"]: float(r["ranking_signal"]) for r in ranked}
+    rank_signal, selector_meta = _learned_selector(selector, db, base)
     missing = [mid for mid in usable_ids if mid not in rank_signal]
     if missing:
-        raise ValueError("Some cohort motions are missing from the learned ranking; refresh screening and retrain")
+        raise ValueError("Some cohort motions could not be scored by the selector; refresh screening and retrain")
 
-    seen_ids = set(model.get('source_motion_ids') or [])
+    seen_ids = set(selector_meta["seen_motion_ids"])
     if not seen_ids:
-        raise ValueError('Retrain the preference model with Aura pairwise model v2 before benchmarking unseen motions')
+        raise ValueError("Retrain the selector so its report lists the motions it was trained on")
     unseen_ids = [mid for mid in usable_ids if mid not in seen_ids]
     if len(unseen_ids) < holdout_count:
         raise ValueError(
@@ -341,7 +484,6 @@ def run_benchmark(
         )
     holdout = _heldout_ids(unseen_ids, holdout_count, seed)
     train_pool = [mid for mid in usable_ids if mid not in holdout]
-    aura_ids = sorted(train_pool, key=lambda mid: rank_signal[mid], reverse=True)[:train_count]
     if len(train_pool) <= train_count:
         raise ValueError("Need at least one extra training-pool motion for a meaningful random baseline")
 
@@ -351,7 +493,18 @@ def run_benchmark(
     if effective_samples < 20:
         raise ValueError("Motions are too short for the downstream benchmark")
     test_seqs = [seqs[mid] for mid in holdout]
-    aura_result = _fit_and_eval([seqs[mid] for mid in aura_ids], test_seqs, effective_samples, horizon_s)
+
+    def top(scores: dict[str, float]) -> list[str]:
+        # Ties break by id so the selection is deterministic.
+        return sorted(train_pool, key=lambda mid: (-scores[mid], mid))[:train_count]
+
+    picks = {
+        selector: top(rank_signal),
+        "kinematic_heuristic": top(_heuristic_scores(base, train_pool)),
+        "cohort_centroid": top(_centroid_scores(seqs, train_pool)),
+    }
+    results = {name: _fit_and_eval([seqs[mid] for mid in ids], test_seqs, effective_samples, horizon_s)
+               for name, ids in picks.items()}
 
     combinations = list(itertools.combinations(train_pool, train_count))
     rng = np.random.default_rng(seed)
@@ -364,6 +517,22 @@ def run_benchmark(
         _fit_and_eval([seqs[mid] for mid in subset], test_seqs, effective_samples, horizon_s) for subset in subsets
     ]
     random_summary = _summary(random_results)
+    random_per_motion = {key: np.mean([r["per_motion"][key] for r in random_results], axis=0).tolist() for key in METRIC_KEYS}
+
+    def strip(result: dict) -> dict:
+        return {k: v for k, v in result.items() if k != "per_motion"}
+
+    selectors_report = {}
+    for name, ids in picks.items():
+        selectors_report[name] = {
+            "label": SELECTOR_LABELS[name],
+            "learned": name in SELECTORS,
+            "selected_ids": ids,
+            "result": strip(results[name]),
+            "vs_random": _bootstrap_vs_random(results[name], random_per_motion, seed),
+        }
+
+    aura_result = strip(results[selector])
     comparison = {}
     for key in METRIC_KEYS:
         baseline = float(random_summary[key]["mean"])
@@ -376,13 +545,16 @@ def run_benchmark(
             "relative_improvement_pct": round(improvement, 2),
             "aura_beats_random_trials_pct": round(percentile, 1),
             "lower_is_better": True,
+            **{k: v for k, v in selectors_report[selector]["vs_random"][key].items() if k in ("ci95_cm", "verdict")},
         }
 
     sources = {mid: seqs[mid].native_sha256 for mid in usable_ids}
     core = {
         "version": VERSION,
-        "selection_model_version": model.get("version"),
-        "selection_model_dataset_sha256": model.get("dataset_sha256"),
+        "selector": selector,
+        "selector_label": SELECTOR_LABELS[selector],
+        "selection_model_version": selector_meta.get("version"),
+        "selection_model_dataset_sha256": selector_meta.get("dataset_sha256"),
         "cohort_name": cohort_name,
         "cohort_count": len(usable_ids),
         "train_count": train_count,
@@ -391,29 +563,36 @@ def run_benchmark(
         "samples_per_motion": effective_samples,
         "horizon_s": horizon_s,
         "seed": seed,
-        "aura_selected_ids": aura_ids,
+        "bootstrap_samples": BOOTSTRAP_SAMPLES,
+        "aura_selected_ids": picks[selector],
         "heldout_ids": holdout,
         "selector_seen_motion_ids": sorted(seen_ids),
         "downstream_holdout_is_selector_unseen": True,
         "aura_result": aura_result,
         "random_summary": random_summary,
         "comparison": comparison,
+        "selectors": selectors_report,
         "source_motion_sha256": sources,
         "metric_definition": {
             "one_step_mpjpe_cm": "Mean per-joint position error for one-step held-out motion prediction",
             "rollout_mpjpe_cm": f"Mean per-joint position error after an autoregressive {horizon_s:.2f}s rollout",
             "rollout_root_error_cm": f"Pelvis/root position error after an autoregressive {horizon_s:.2f}s rollout",
+            "ci95_cm": "95% bootstrap interval, over held-out motions, of (random-mean error - selector error); above 0 favours the selector",
         },
         "scope": "Offline kinematic behavior-cloning proxy on held-out G1 trajectories; not physics simulation, balance validation, or real-robot success.",
-        "interpretation": "If Aura-selected training motions outperform the repeated random baseline under the same learner and transition budget, that is evidence that learned selection helps this specific imitation proxy. A negative result is retained as-is.",
+        "interpretation": (
+            "A selector counts as better than random only when its whole 95% interval is above zero. "
+            "Compare the learned selector with the cohort-centroid baseline: if picking the most typical motions "
+            "does as well, the gain reflects typicality rather than learned quality. A negative result is retained as-is."
+        ),
     }
     result = {**core, "created_at": int(time.time())}
     result["report_sha256"] = sha256(canonical_bytes(core))
     outdir = base / "benchmarks"
     outdir.mkdir(exist_ok=True)
     filename = f"{result['created_at']}-{result['report_sha256'][:12]}.json"
-    (outdir / filename).write_text(json.dumps(result, indent=2))
-    (outdir / "latest.json").write_text(json.dumps(result, indent=2))
+    atomic_write_text(outdir / filename, json.dumps(result, indent=2))
+    atomic_write_text(outdir / "latest.json", json.dumps(result, indent=2))
     return result
 
 

@@ -6,6 +6,7 @@ import {
   explorerTransactionUrl,
   payCurationOnChain,
   shortAddress,
+  signAuraChallenge,
 } from '../solana'
 import type { WalletConnection } from '../solana'
 import { GeneratedMotionPreview } from './GeneratedMotionPreview'
@@ -68,7 +69,10 @@ export function CurationMarket(){
     await refresh()
   }catch(e){setError(e instanceof Error?e.message:'Could not create bounty')}finally{setBusy(false)}}
   const curate=async(winner:string)=>{if(!active) return;setBusy(true);setError('');setNotice('');try{
-    const w=await connect();const row=await api<Curation>('/bounties/curate',{bounty_id:active.id,curator_wallet:w.address,left_id:left,right_id:right,winner_id:winner})
+    const w=await connect();const vote={bounty_id:active.id,curator_wallet:w.address,left_id:left,right_id:right,winner_id:winner}
+    // Prove wallet ownership: the server issues a one-time challenge naming this exact vote; the wallet signs it (no transaction, no fee).
+    const challenge=await api<{nonce:string;message:string}>('/bounties/challenge',{...vote,action:'curate'})
+    const row=await api<Curation>('/bounties/curate',{...vote,challenge_nonce:challenge.nonce,wallet_signature:await signAuraChallenge(w,challenge.message)})
     setNotice(`Curation #${row.id} saved. It also enters Aura's preference dataset. The requester can now pay ${sol(row.reward_lamports).toFixed(4)} SOL on devnet.`);await refresh()
   }catch(e){setError(e instanceof Error?e.message:'Could not save curation')}finally{setBusy(false)}}
   const pay=async(c:Curation)=>{setBusy(true);setError('');setNotice('');try{

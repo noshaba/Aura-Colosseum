@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 import numpy as np
 from aura_g1_metrics import canonical_bytes, sha256
+from aura_io import atomic_write_text
 
 FEATURES = (
     'near_floor_toe_speed_m_s',
@@ -58,7 +59,7 @@ def get_motion(base, motion_id):
             raise ValueError('No usable G1 motion data')
         e = report_for_npz(native, m['fps'])
         m['kinematic_evaluation'] = e
-        path.write_text(json.dumps(m, indent=2))
+        atomic_write_text(path, json.dumps(m, indent=2))
     return m
 
 
@@ -71,6 +72,72 @@ def features(m):
 
 def _pair_key(left_hash: str, right_hash: str) -> str:
     return '|'.join(sorted((str(left_hash), str(right_hash))))
+
+
+def _comparison_group(m):
+    """What two motions must share to be compared: the exact prompt (stored as the motion
+    name), or an explicit preference_group for bundled starter/reference clips."""
+    return str(m.get('preference_group') or m.get('name') or '').strip()
+
+
+def split_unit_lookup(base):
+    """motion_id -> split unit: its generation batch when known, else its own content hash.
+
+    Holding out whole batches keeps every candidate of one prompt run on the same side,
+    since tournament pairs never cross batches."""
+    cache = {}
+
+    def unit_of(motion_id):
+        if motion_id not in cache:
+            m = get_motion(base, motion_id)
+            batch = str(m.get('batch_id') or '').strip()
+            cache[motion_id] = f'batch:{batch}' if batch else f"motion:{m['kinematic_evaluation']['native_sha256']}"
+        return cache[motion_id]
+    return unit_of
+
+
+def motion_level_split(rows, unit_of, *, seed, val_fraction=0.2, min_train=6, min_val=2):
+    """Split comparisons so no motion appears in both training and validation.
+
+    Units (batches, or single motions when there are too few batches) are held out in a
+    seeded order until validation holds about `val_fraction` of the comparisons. A
+    comparison is validation only if both motions are held out and training only if
+    neither is; mixed comparisons are dropped from both and counted. When the data is
+    too small for an honest split, everything trains and validation is withheld.
+
+    Returns (train_idx, val_idx, info)."""
+    units = [(unit_of(r['left_id']), unit_of(r['right_id'])) for r in rows]
+    info = {'method': 'motion-level', 'split_unit': 'generation batch',
+            'dropped_mixed_count': 0, 'heldout': False, 'reason': None}
+    distinct = sorted({u for pair in units for u in pair})
+    if len(distinct) < 3:
+        # One or two batches can't be split by batch: fall back to single motions.
+        units = [(f"motion:{r['left_hash']}", f"motion:{r['right_hash']}") for r in rows]
+        distinct = sorted({u for pair in units for u in pair})
+        info['split_unit'] = 'motion'
+    everything = (list(range(len(rows))), [])
+    if len(rows) < 10:
+        info['reason'] = 'fewer than 10 valid comparisons'
+        return (*everything, info)
+
+    order = list(distinct)
+    np.random.default_rng(seed).shuffle(order)
+    target = max(min_val, round(val_fraction * len(rows)))
+    held = set()
+    val_idx = []
+    for unit in order:
+        held.add(unit)
+        val_idx = [i for i, (a, b) in enumerate(units) if a in held and b in held]
+        if len(val_idx) >= target:
+            break
+    train_idx = [i for i, (a, b) in enumerate(units) if a not in held and b not in held]
+    if len(val_idx) < min_val or len(train_idx) < min_train:
+        info['reason'] = (f'a motion-level split left {len(train_idx)} training and {len(val_idx)} '
+                          f'validation comparisons (need {min_train} and {min_val})')
+        return (*everything, info)
+    info.update(heldout=True, dropped_mixed_count=len(rows) - len(train_idx) - len(val_idx),
+                heldout_unit_count=len(held))
+    return train_idx, val_idx, info
 
 
 def _clean_evaluator_id(value):
@@ -86,7 +153,8 @@ def _clean_evaluator_id(value):
     return value
 
 
-def add_preference(conn, base, left_id, right_id, winner_id, context='', evaluator_id=None):
+def add_preference(conn, base, left_id, right_id, winner_id, context='', evaluator_id=None, *, commit=True):
+    """Store one validated vote. commit=False leaves it in the caller's open transaction."""
     if left_id == right_id:
         raise ValueError('Select two different motions')
     if winner_id not in (left_id, right_id):
@@ -99,8 +167,8 @@ def add_preference(conn, base, left_id, right_id, winner_id, context='', evaluat
     # Generated candidates still compare within the exact same prompt. Bundled
     # starter/reference clips share an explicit preference_group so their votes can
     # teach broad motion quality without pretending they measure prompt compliance.
-    left_group = str(left.get('preference_group') or left.get('name') or '').strip()
-    right_group = str(right.get('preference_group') or right.get('name') or '').strip()
+    left_group = _comparison_group(left)
+    right_group = _comparison_group(right)
     if left_group and right_group and left_group != right_group:
         raise ValueError('Aura preferences require two motions from the same comparison group')
 
@@ -139,7 +207,8 @@ def add_preference(conn, base, left_id, right_id, winner_id, context='', evaluat
         'VALUES(?,?,?,?,?,?,?,?,?)',
         entry,
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     record = {
         'id': cur.lastrowid,
         'left_id': left_id,
@@ -272,23 +341,9 @@ def train(conn, base):
     ])
     y = np.array([1.0 if r['winner_id'] == r['left_id'] else 0.0 for r in valid])
 
-    groups = {}
-    for i, r in enumerate(valid):
-        groups.setdefault(r.get('pair_key') or _pair_key(r['left_hash'], r['right_hash']), []).append(i)
-    heldout = len(valid) >= 10 and len(groups) >= 4
-    if heldout:
-        rng = np.random.default_rng(37)
-        keys = list(groups)
-        rng.shuffle(keys)
-        held_keys = set(keys[-max(1, len(keys) // 5):])
-        test_idx = np.array([i for key in held_keys for i in groups[key]], dtype=int)
-        train_idx = np.array([i for key in keys if key not in held_keys for i in groups[key]], dtype=int)
-        if len(train_idx) < 6:
-            train_idx = np.arange(len(valid))
-            test_idx = np.array([], dtype=int)
-    else:
-        train_idx = np.arange(len(valid))
-        test_idx = np.array([], dtype=int)
+    train_list, test_list, split = motion_level_split(valid, split_unit_lookup(base), seed=37)
+    train_idx = np.array(train_list, dtype=int)
+    test_idx = np.array(test_list, dtype=int)
 
     train_ids = {mid for idx in train_idx for mid in (valid[idx]['left_id'], valid[idx]['right_id'])}
     mat = np.stack([features(motions[mid]) for mid in sorted(train_ids)])
@@ -322,6 +377,7 @@ def train(conn, base):
         'duplicate_comparison_count': diagnostics['duplicate_comparison_count'],
         'rejected_comparison_count': diagnostics['rejected_comparison_count'],
         'heldout_count': int(len(test_idx)),
+        'split': split,
         'train_log_loss': round(loss(train_prob, y[train_idx]), 5),
         'heldout_accuracy': None,
         'heldout_log_loss': None,
@@ -381,10 +437,19 @@ def next_pair(conn, base):
     r = rank(conn, base)
     candidates = r['rankings']
     compared = {frozenset((x['left_id'], x['right_id'])) for x in list_preferences(conn)}
+    # Only suggest pairs add_preference would accept: same prompt / comparison group.
+    group = {}
+    for c in candidates:
+        try:
+            group[c['id']] = _comparison_group(get_motion(base, c['id']))
+        except (ValueError, KeyError, OSError):
+            group[c['id']] = None
     best = None
     for i, a in enumerate(candidates):
         for b in candidates[i + 1:]:
             if frozenset((a['id'], b['id'])) in compared:
+                continue
+            if group[a['id']] is None or group[a['id']] != group[b['id']]:
                 continue
             diff = abs(a['ranking_signal'] - b['ranking_signal'])
             if best is None or diff < best[0]:

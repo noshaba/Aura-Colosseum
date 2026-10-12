@@ -237,7 +237,7 @@ export function SceneLab() {
     setError('')
     setMessage('Camera capture uploaded. Starting Gaussian reconstruction…')
     try {
-      const response = await fetch(`/aura-api/scene/captures/${encodeURIComponent(captureId)}/reconstruct`, { method: 'POST' })
+      const response = await fetch(`/aura-api/scene/captures/${encodeURIComponent(captureId)}/reconstruct`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       const data = await response.json() as CaptureStatus & { error?: string }
       if (!response.ok) throw new Error(data.error || `Reconstruction start failed (${response.status})`)
       setCapture(data)
