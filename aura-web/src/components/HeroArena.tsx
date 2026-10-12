@@ -536,11 +536,37 @@ export function HeroArena({ live = false }: { live?: boolean }) {
       preferredGroupRef.current = clips[0].preferenceGroup
       nextPairRef.current = null
 
-      // Warm the first generated matchup without interrupting the pair currently on screen.
+      // Put the fresh candidates straight onto the pedestals so they can be rated now.
+      // If a vote transition is mid-flight, the preferred group makes it the next matchup instead.
       const generatedPair = pickPair(clipsRef.current, pairRef.current, clips[0].preferenceGroup)
-      void Promise.all([loadClip(generatedPair.a), loadClip(generatedPair.b)]).catch(() => {})
+      const generatedClips = Promise.all([loadClip(generatedPair.a), loadClip(generatedPair.b)])
+      let shown = false
+      if (!busyRef.current && sceneRef.current === scene) {
+        busyRef.current = true; setBusy(true)
+        try {
+          const [ca, cb] = await generatedClips
+          if (sceneRef.current === scene) {
+            nextPairRef.current = null
+            preferredGroupRef.current = null
+            setPair(generatedPair)
+            setMode('generated')
+            await scene.setMatchup({ clip: ca, label: generatedPair.a.label }, { clip: cb, label: generatedPair.b.label })
+            if (!playing) setPlaying(true)
+            prefetchNext(generatedPair)
+            roundStartRef.current = performance.now()
+            setAnnounce(`New motions: Motion A, ${generatedPair.a.label}, versus Motion B, ${generatedPair.b.label}.`)
+            shown = true
+          }
+        } finally {
+          busyRef.current = false; setBusy(false)
+        }
+      } else {
+        void generatedClips.catch(() => {})
+      }
 
-      setGenerationMessage(`${added.length} new unique motion${added.length === 1 ? '' : 's'} added. Keep choosing: the generated motions are now in the continuous comparison queue and will appear next.`)
+      setGenerationMessage(shown
+        ? `${added.length} new motion${added.length === 1 ? '' : 's'} on the platforms. Pick the one that moves more naturally.`
+        : `${added.length} new unique motion${added.length === 1 ? '' : 's'} added. They will appear in the next matchup.`)
       window.dispatchEvent(new CustomEvent('aura:motion-generated', { detail: { ids: clips.map(clip => clip.preferenceId) } }))
       void refreshGeneratorStatus()
     } catch (error) {
@@ -549,7 +575,7 @@ export function HeroArena({ live = false }: { live?: boolean }) {
     } finally {
       setGenerating(false)
     }
-  }, [generating, generatorStatus?.model_loaded, live, phase, prompt, refreshGeneratorStatus])
+  }, [generating, generatorStatus?.model_loaded, live, phase, playing, prefetchNext, prompt, refreshGeneratorStatus])
 
   // ---------------------------------------------------------------- game loop
   const vote = useCallback(async (choice: Choice, input: HeroVote['input']) => {
