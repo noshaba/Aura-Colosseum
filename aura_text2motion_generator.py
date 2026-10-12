@@ -128,6 +128,27 @@ class AuraText2MotionGenerator:
             "last_error": self._last_error,
         }
 
+    def release_model(self) -> dict[str, Any]:
+        """Release the resident Kimodo model so Scene Lab reconstruction can use GPU VRAM."""
+        if not self._lock.acquire(blocking=False):
+            raise RuntimeError("NVIDIA Kimodo is currently generating; wait before reconstructing a Gaussian scene.")
+        try:
+            had_model = self._model is not None
+            self._model = None
+            self._resolved_model = None
+            self._device = None
+            try:
+                import gc
+                gc.collect()
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+            return {"released": had_model}
+        finally:
+            self._lock.release()
+
     def _ensure_model(self):
         if self._model is not None:
             return self._model

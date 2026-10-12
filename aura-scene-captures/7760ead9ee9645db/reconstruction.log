@@ -1,0 +1,29 @@
+
+$ /home/noshaba/miniconda3/condabin/conda run --no-capture-output -n aura-splat ns-process-data video --data /home/noshaba/Documents/Aura-Colosseum/aura-scene-captures/7760ead9ee9645db/capture.webm --output-dir /home/noshaba/Documents/Aura-Colosseum/aura-scene-captures/7760ead9ee9645db/processed --num-frames-target 60
+Traceback (most recent call last):
+  File "/home/noshaba/miniconda3/envs/aura-splat/bin/ns-process-data", line 3, in <module>
+    from nerfstudio.scripts.process_data import entrypoint
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/nerfstudio/scripts/process_data.py", line 28, in <module>
+    from nerfstudio.process_data import (
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/nerfstudio/process_data/metashape_utils.py", line 23, in <module>
+    import open3d as o3d
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/open3d/__init__.py", line 115, in <module>
+    import open3d.visualization
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/open3d/visualization/__init__.py", line 14, in <module>
+    from .draw_plotly import get_plotly_fig
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/open3d/visualization/draw_plotly.py", line 12, in <module>
+    from dash import html
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/dash/__init__.py", line 5, in <module>
+    from .dependencies import (  # noqa: F401,E402
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/dash/dependencies.py", line 4, in <module>
+    from .development.base_component import Component
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/dash/development/__init__.py", line 1, in <module>
+    from . import base_component  # noqa:F401
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/dash/development/base_component.py", line 11, in <module>
+    from .._utils import patch_collections_abc, stringify_id, OrderedSet
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/dash/_utils.py", line 22, in <module>
+    from .types import RendererHooks
+  File "/home/noshaba/miniconda3/envs/aura-splat/lib/python3.10/site-packages/dash/types.py", line 4, in <module>
+    from pydantic import Field, GetCoreSchemaHandler, GetJsonSchemaHandler
+ModuleNotFoundError: No module named 'pydantic'
+ERROR conda.cli.main_run:execute(148): `conda run ns-process-data video --data /home/noshaba/Documents/Aura-Colosseum/aura-scene-captures/7760ead9ee9645db/capture.webm --output-dir /home/noshaba/Documents/Aura-Colosseum/aura-scene-captures/7760ead9ee9645db/processed --num-frames-target 60` failed. (See above for error)

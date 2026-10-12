@@ -1,0 +1,16 @@
+
+$ /home/noshaba/miniconda3/condabin/conda run --no-capture-output -n aura-splat ns-process-data video --data /home/noshaba/Documents/Aura-Colosseum/aura-scene-captures/f8e4c69764cb4989/capture.webm --output-dir /home/noshaba/Documents/Aura-Colosseum/aura-scene-captures/f8e4c69764cb4989/processed --num-frames-target 60 --matching-method exhaustive
+Number of frames in video: 461
+Extracting 66 frames in evenly spaced intervals
+[20:03:05] 🎉 Done converting video to images.                                                 process_data_utils.py:227
+[20:03:07] 🎉 Done extracting COLMAP features.                                                       colmap_utils.py:137
+[20:03:13] 🎉 Done matching COLMAP features.                                                         colmap_utils.py:151
+[20:05:24] 🎉 Done COLMAP bundle adjustment.                                                         colmap_utils.py:173
+           🎉 Done refining intrinsics.                                                              colmap_utils.py:184
+           🎉 🎉 🎉 All DONE 🎉 🎉 🎉                                                 video_to_nerfstudio_dataset.py:149
+           Starting with 461 video frames                                             video_to_nerfstudio_dataset.py:152
+           We extracted 66 images with prefix 'frame_'                                video_to_nerfstudio_dataset.py:152
+           Colmap matched 2 images                                                    video_to_nerfstudio_dataset.py:152
+           COLMAP only found poses for 3.03% of the images. This is low.              video_to_nerfstudio_dataset.py:152
+           This can be caused by a variety of reasons, such poor scene coverage,                                        
+           blurry images, or large exposure changes.                                                                    

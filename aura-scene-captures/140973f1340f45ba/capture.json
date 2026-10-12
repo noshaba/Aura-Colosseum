@@ -1,0 +1,22 @@
+{
+  "id": "140973f1340f45ba",
+  "name": "Aura room 8:00:50 PM",
+  "status": "error",
+  "stage": "reconstruction failed",
+  "progress": 0.0,
+  "created_at": 1791741650,
+  "content_type": "video/webm;codecs=vp9",
+  "bytes": 9332529,
+  "duration_s": 20.01,
+  "video_file": "capture.webm",
+  "splat_ready": false,
+  "backend": {
+    "available": true,
+    "kind": "nerfstudio-conda",
+    "label": "Nerfstudio / Splatfacto via conda env aura-splat",
+    "detail": "Ready: camera poses \u2192 Splatfacto \u2192 Gaussian export"
+  },
+  "note": "Captured video is local to this Aura machine. Gaussian reconstruction is visual context; planning uses the explicit geometry proxy.",
+  "updated_at": 1791741843,
+  "error": "RuntimeError: Capture quality too low: COLMAP registered only 3 frame(s). Need at least 10. Record a 15\u201325 second scan, move slowly sideways/around objects (not just rotate), keep strong overlap, and avoid motion blur."
+}
