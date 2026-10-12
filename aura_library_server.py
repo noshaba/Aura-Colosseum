@@ -1,11 +1,12 @@
 """Aura local development library API. Only binds to localhost; not for public deployment."""
 import json
 from aura_preference import connect, add_preference, list_preferences, latest, train, rank, next_pair, preference_diagnostics
-from aura_g1_metrics import report_for_npz
-from aura_downstream_benchmark import list_cohorts, run_benchmark, latest_benchmark
+from aura_g1_metrics import REPORT_VERSION, report_for_npz, sha256
+from aura_io import atomic_write_bytes, atomic_write_text
+from aura_downstream_benchmark import MIN_HOLDOUT, list_cohorts, run_benchmark, latest_benchmark, selector_status
 from aura_constraints import preset_payload, evaluate_candidates
 from aura_bounties import (create_bounty, list_bounties, list_curations, curate,
-    attach_post_signature, record_payment, close_bounty)
+    attach_post_signature, record_payment, close_bounty, create_wallet_challenge)
 from aura_text2motion_generator import AuraText2MotionGenerator, list_examples
 from aura_motion_prior import train_prior, status as prior_status
 from aura_reward_model import train_reward_model, status as reward_status
@@ -14,6 +15,10 @@ from aura_scene_capture import (MAX_UPLOAD_BYTES, create_capture, get_capture, r
     splat_path as scene_splat_path, start_reconstruction)
 from aura_starter_motions import ensure_starter_motions
 import os
+import sys
+import threading
+import traceback
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -25,6 +30,111 @@ ensure_starter_motions(BASE)
 DB = BASE / "aura-preferences.sqlite3"
 PORT = int(os.environ.get("AURA_LIBRARY_PORT", "8765"))
 GENERATOR = AuraText2MotionGenerator(BASE)
+
+# Browser origins allowed to POST. Browsers always send Origin on cross-site requests, so a
+# page on another site can't drive this API (generate, train, close bounties) through your
+# browser; requests without Origin come from non-browser clients like curl and the tests.
+ALLOWED_ORIGINS = {f"http://{host}:{port}" for host in ("localhost", "127.0.0.1", "[::1]") for port in (5173, 4173)}
+ALLOWED_ORIGINS |= {o.strip() for o in os.environ.get("AURA_ALLOWED_ORIGINS", "").split(",") if o.strip()}
+
+# ---- Library maintenance --------------------------------------------------------------
+# Preview-format upgrades and metric caching write files, so they run in one background
+# refresh (never in GET /motions) and write atomically. Failures are remembered per file
+# version so a broken record isn't retried on every poll.
+_REFRESH_LOCK = threading.Lock()
+_REFRESH_FAILURES: dict[str, tuple[tuple, str]] = {}
+
+
+def _is_g1(item):
+    return 'g1' in str(item.get('model', '')).lower()
+
+
+def _preview_needs_upgrade(item):
+    preview = BASE / f"{item['id']}.g1.json"
+    try:
+        # Preview payloads can be several MB; the header is enough to tell the format.
+        with preview.open("rb") as f:
+            return b'"format":"g1-joints-v2"' not in f.read(96)
+    except OSError:
+        return True
+
+
+def _metrics_current(item, digest=None):
+    e = item.get('kinematic_evaluation')
+    if not e or e.get('report', {}).get('method') != REPORT_VERSION:
+        return False
+    return digest is None or e.get('native_sha256') == digest
+
+
+def _native_path(item):
+    native = (BASE / str(item.get('native_file', ''))).resolve()
+    if native.parent != BASE or native.suffix != '.npz' or not native.is_file():
+        raise ValueError('Invalid or missing motion file')
+    return native
+
+
+def _file_signature(file, item):
+    try:
+        return (file.stat().st_mtime_ns, _native_path(item).stat().st_mtime_ns)
+    except (OSError, ValueError):
+        return (file.stat().st_mtime_ns, None)
+
+
+def _refresh_record(file):
+    item = json.loads(file.read_text())
+    if not isinstance(item, dict) or not item.get('id') or not _is_g1(item) or item.get('source') == 'starter_reference':
+        return
+    signature = _file_signature(file, item)
+    failed = _REFRESH_FAILURES.get(file.name)
+    if failed and failed[0] == signature:
+        return
+    try:
+        import numpy as np
+        from aura_g1_preview import g1_preview_bytes
+        native = _native_path(item)
+        changed = False
+        preview = BASE / f"{item['id']}.g1.json"
+        if _preview_needs_upgrade(item):
+            with np.load(native, allow_pickle=False) as data:
+                pos = np.asarray(data["posed_joints"])
+                rot = np.asarray(data["global_rot_mats"])
+            atomic_write_bytes(preview, g1_preview_bytes(pos, item.get("fps", 30), rot))
+            changed = True
+        if item.get('preview_file') != preview.name or item.get('preview_error'):
+            item['preview_file'], item['preview_error'] = preview.name, None
+            changed = True
+        # Cache metrics by source-file digest and algorithm version.
+        digest = sha256(native.read_bytes())
+        if not _metrics_current(item, digest):
+            item['kinematic_evaluation'] = report_for_npz(native, item['fps'])
+            changed = True
+        if changed:
+            atomic_write_text(file, json.dumps(item, indent=2))
+        _REFRESH_FAILURES.pop(file.name, None)
+    except Exception as exc:
+        _REFRESH_FAILURES[file.name] = (signature, f'{type(exc).__name__}: {exc}')
+
+
+def refresh_library():
+    """Bring every motion record's preview and metrics up to date. One run at a time."""
+    if not _REFRESH_LOCK.acquire(blocking=False):
+        return
+    try:
+        for file in sorted(BASE.glob("*.json")):
+            if file.name.endswith('.g1.json') or file.name.startswith('.'):
+                continue
+            try:
+                _refresh_record(file)
+            except (OSError, ValueError):
+                continue
+    finally:
+        _REFRESH_LOCK.release()
+
+
+def schedule_library_refresh():
+    if not _REFRESH_LOCK.locked():
+        threading.Thread(target=refresh_library, name='aura-library-refresh', daemon=True).start()
+
 
 class Handler(BaseHTTPRequestHandler):
     def respond_json(self, status, payload):
@@ -46,14 +156,34 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _reject_unsafe_post(self, path):
+        """Origin must be an allowed local origin (when present); bodies must be JSON, except
+        the video upload. Both force cross-site browser requests through a CORS preflight,
+        which this server never approves."""
+        origin = self.headers.get('Origin')
+        if origin is not None and origin not in ALLOWED_ORIGINS:
+            self.respond_json(403, {'error': 'Cross-origin request rejected. Set AURA_ALLOWED_ORIGINS to allow another local UI origin.'})
+            return True
+        content_type = (self.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+        if path == '/scene/captures':
+            if not content_type.startswith('video/'):
+                self.respond_json(415, {'error': 'Camera captures must be uploaded with a video/* Content-Type'})
+                return True
+        elif content_type != 'application/json':
+            self.respond_json(415, {'error': 'Requests must use Content-Type: application/json'})
+            return True
+        return False
+
     def do_POST(self):
         path = urlparse(self.path).path
+        if self._reject_unsafe_post(path):
+            return
         try:
             if path == '/scene/captures':
                 size = int(self.headers.get('Content-Length', '0'))
                 if size <= 0 or size > MAX_UPLOAD_BYTES:
                     raise ValueError(f'Camera capture must be between 1 byte and {MAX_UPLOAD_BYTES // (1024 * 1024)} MB')
-                content_type = self.headers.get('Content-Type', 'video/webm')
+                content_type = self.headers.get('Content-Type')
                 name = self.headers.get('X-Aura-Capture-Name', 'Camera scene')
                 duration = self.headers.get('X-Aura-Capture-Duration')
                 out = create_capture(
@@ -65,7 +195,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(capture_parts) == 4 and capture_parts[0] == 'scene' and capture_parts[1] == 'captures' and capture_parts[3] == 'reconstruct':
                 out = start_reconstruction(capture_parts[2], before_start=GENERATOR.release_model)
                 return self.respond_json(202, out)
-            if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/scene/plan', '/scene/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close'):
+            if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/scene/plan', '/scene/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close', '/bounties/challenge'):
                 return self.send_error(404)
             size = int(self.headers.get('Content-Length', '0'))
             if size > 16384 or size < 0: raise ValueError('Invalid request size')
@@ -88,7 +218,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path == '/benchmark':
                 out = run_benchmark(
                     BASE, DB, cohort_name=body.get('cohort_name', ''),
-                    train_count=body.get('train_count', 4), holdout_count=body.get('holdout_count', 2),
+                    selector=body.get('selector', 'reward_transformer'),
+                    train_count=body.get('train_count', 6), holdout_count=body.get('holdout_count', 6),
                     random_trials=body.get('random_trials', 20), samples_per_motion=body.get('samples_per_motion', 100),
                     horizon_s=body.get('horizon_s', 0.5), seed=body.get('seed', 37),
                 )
@@ -117,14 +248,19 @@ class Handler(BaseHTTPRequestHandler):
                     elif path == '/bounties/pay':
                         out = record_payment(conn, body)
                     elif path == '/bounties/close':
-                        out = close_bounty(conn, body.get('bounty_id', ''))
+                        out = close_bounty(conn, body)
+                    elif path == '/bounties/challenge':
+                        out = create_wallet_challenge(conn, body)
             self.respond_json(200, out)
         except (ValueError, TypeError, KeyError) as e:
             self.respond_json(400, {'error': str(e)})
         except RuntimeError as e:
             self.respond_json(503, {'error': str(e)})
-        except Exception as e:
-            self.respond_json(500, {'error': 'Server error: ' + type(e).__name__ + ': ' + str(e)[:500]})
+        except Exception:
+            ref = uuid.uuid4().hex[:8]
+            print(f'[aura-api] error {ref} on POST {path}', file=sys.stderr)
+            traceback.print_exc()
+            self.respond_json(500, {'error': f'Internal server error (ref {ref}). Details are in the Aura API log.'})
 
 
     def do_GET(self):
@@ -172,13 +308,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/benchmark/cohorts':
             try:
                 cohorts = list_cohorts(BASE)
-                with connect(DB) as conn:
-                    model = latest(conn)
-                seen = set((model or {}).get('source_motion_ids') or [])
+                status = selector_status(BASE, DB)
                 for cohort in cohorts:
-                    cohort['selector_unseen_count'] = sum(1 for mid in cohort['motion_ids'] if mid not in seen) if model else 0
-                    cohort['selector_model_version'] = (model or {}).get('version')
-                return self.respond_json(200, {'cohorts': cohorts})
+                    cohort['selectors'] = {
+                        name: {'label': s['label'], 'trained': s['trained'], 'version': s['version'],
+                               'unseen_count': sum(1 for mid in cohort['motion_ids'] if mid not in set(s['seen_motion_ids'])) if s['trained'] else 0}
+                        for name, s in status.items()
+                    }
+                return self.respond_json(200, {'cohorts': cohorts, 'min_holdout': MIN_HOLDOUT})
             except Exception as exc:
                 return self.respond_json(500, {'error': type(exc).__name__})
         if path == '/benchmark':
@@ -212,10 +349,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 return self.respond_json(500, {'error': type(exc).__name__})
         if path == "/motions":
+            # Read-only: stale previews/metrics are fixed by the background refresh, which
+            # writes atomically, so a poll never sees (or produces) a half-written file.
             entries = []
+            stale = False
             for file in BASE.glob("*.json"):
-                if file.name.endswith('.g1.json'):
-                    continue  # Preview JSON is not a motion-library record.
+                if file.name.endswith('.g1.json') or file.name.startswith('.'):
+                    continue  # Preview JSON and temp files are not motion-library records.
                 try:
                     item = json.loads(file.read_text())
                     if not isinstance(item, dict) or not item.get('id') or not item.get('native_file'):
@@ -225,48 +365,24 @@ class Handler(BaseHTTPRequestHandler):
                     # the top hero arena and should not appear as generated library items.
                     if item.get('source') == 'starter_reference':
                         continue
-                    if item.get("model", "").lower().find("g1") >= 0:
-                        try:
-                            import numpy as np
-                            from aura_g1_preview import g1_preview_bytes
-                            native = BASE / item["native_file"]
-                            preview = BASE / f"{item['id']}.g1.json"
-                            needs_upgrade = not preview.is_file()
-                            if preview.is_file():
-                                try:
-                                    # Preview payloads can be several MB; inspect only the header on polling.
-                                    header = preview.open("rb").read(96)
-                                    needs_upgrade = b'"format":"g1-joints-v2"' not in header
-                                except Exception:
-                                    needs_upgrade = True
-                            if needs_upgrade:
-                                with np.load(native, allow_pickle=False) as data:
-                                    pos = np.asarray(data["posed_joints"])
-                                    rot = np.asarray(data["global_rot_mats"])
-                                preview.write_bytes(g1_preview_bytes(pos, item.get("fps", 30), rot))
-                            item["preview_file"] = preview.name
-                            item["preview_error"] = None
-                            file.write_text(json.dumps(item, indent=2))
-                        except Exception as exc:
-                            item["preview_error"] = f"G1 preview recovery: {exc}"
-                    if 'g1' in item.get('model', '').lower() and (BASE / item.get('native_file', '')).is_file():
-                        try:
-                            native = BASE / item['native_file']
-                            if native.parent != BASE or native.suffix != '.npz':
-                                raise ValueError('Invalid motion filename')
-                            # Cache results by source-file digest and algorithm version.
-                            from aura_g1_metrics import REPORT_VERSION, sha256
-                            digest = sha256(native.read_bytes())
-                            existing = item.get('kinematic_evaluation')
-                            if (not existing or existing.get('native_sha256') != digest
-                                    or existing.get('report', {}).get('method') != REPORT_VERSION):
-                                item['kinematic_evaluation'] = report_for_npz(native, item['fps'])
-                                file.write_text(json.dumps(item, indent=2))
-                        except Exception as exc:
-                            item['evaluation_error'] = str(exc)
+                    if _is_g1(item):
+                        failure = _REFRESH_FAILURES.get(file.name)
+                        if failure:
+                            item['preview_error'] = f'G1 preview recovery: {failure[1]}'
+                        elif _preview_needs_upgrade(item):
+                            stale = True
+                        if not _metrics_current(item):
+                            stale = stale or not failure
+                            # Serve fresh metrics now; the refresh persists them.
+                            try:
+                                item['kinematic_evaluation'] = report_for_npz(_native_path(item), item['fps'])
+                            except Exception as exc:
+                                item['evaluation_error'] = str(exc)
                     entries.append(item)
                 except (ValueError, OSError):
                     continue
+            if stale:
+                schedule_library_refresh()
             entries.sort(key=lambda item: item.get("created_at", ""), reverse=True)
             payload = json.dumps(entries).encode()
             self.send_response(200)
@@ -294,4 +410,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"Aura library: {BASE} at http://127.0.0.1:{PORT}")
+    schedule_library_refresh()  # upgrade any legacy previews/metrics in the background
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

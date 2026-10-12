@@ -8,6 +8,7 @@ export type SolanaWalletProvider = {
   disconnect?(): Promise<void>
   signTransaction?(transaction: any): Promise<any>
   signAndSendTransaction?(transaction: any, options?: Record<string, unknown>): Promise<{ signature?: string } | string>
+  signMessage?(message: Uint8Array, display?: 'utf8' | 'hex'): Promise<{ signature: Uint8Array } | Uint8Array>
 }
 export type WalletConnection = { kind: WalletKind; label: string; address: string; provider: SolanaWalletProvider }
 
@@ -24,6 +25,14 @@ export const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
 function providerFor(kind:WalletKind):SolanaWalletProvider|null{if(kind==='phantom')return window.phantom?.solana||(window.solana?.isPhantom?window.solana:null)||null;return window.solflare||null}
 export function detectedWallets(){return[{kind:'phantom' as const,label:'Phantom',installed:Boolean(providerFor('phantom'))},{kind:'solflare' as const,label:'Solflare',installed:Boolean(providerFor('solflare'))}]}
 export async function connectWallet(kind:WalletKind):Promise<WalletConnection>{const provider=providerFor(kind);if(!provider)throw new Error(`${kind==='phantom'?'Phantom':'Solflare'} was not detected in this browser.`);const response=await provider.connect();const publicKey=response&&'publicKey' in response&&response.publicKey?response.publicKey:provider.publicKey;if(!publicKey)throw new Error('The wallet connected but did not return a public key.');return{kind,label:kind==='phantom'?'Phantom':'Solflare',address:publicKey.toString(),provider}}
+/** Signs an Aura server challenge (plain text the wallet displays) and returns the
+ *  base64 ed25519 signature the server verifies. Costs nothing: no transaction is sent. */
+export async function signAuraChallenge(wallet:WalletConnection,message:string):Promise<string>{
+  if(!wallet.provider.signMessage)throw new Error(`${wallet.label} does not support message signing, which Aura needs to prove you own this wallet.`)
+  const result=await wallet.provider.signMessage(new TextEncoder().encode(message),'utf8')
+  const signature=result instanceof Uint8Array?result:result.signature
+  let binary='';signature.forEach(b=>{binary+=String.fromCharCode(b)});return btoa(binary)
+}
 export async function disconnectWallet(wallet:WalletConnection|null){await wallet?.provider.disconnect?.()}
 function connection(){return new Connection(DEVNET_RPC,'confirmed')}
 export async function getDevnetBalance(address:string){return await connection().getBalance(new PublicKey(address),'confirmed')/LAMPORTS_PER_SOL}

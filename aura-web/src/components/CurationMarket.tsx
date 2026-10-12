@@ -6,6 +6,7 @@ import {
   explorerTransactionUrl,
   payCurationOnChain,
   shortAddress,
+  signAuraChallenge,
 } from '../solana'
 import type { WalletConnection } from '../solana'
 import { GeneratedMotionPreview } from './GeneratedMotionPreview'
@@ -68,7 +69,10 @@ export function CurationMarket(){
     await refresh()
   }catch(e){setError(e instanceof Error?e.message:'Could not create bounty')}finally{setBusy(false)}}
   const curate=async(winner:string)=>{if(!active) return;setBusy(true);setError('');setNotice('');try{
-    const w=await connect();const row=await api<Curation>('/bounties/curate',{bounty_id:active.id,curator_wallet:w.address,left_id:left,right_id:right,winner_id:winner})
+    const w=await connect();const vote={bounty_id:active.id,curator_wallet:w.address,left_id:left,right_id:right,winner_id:winner}
+    // Prove wallet ownership: the server issues a one-time challenge naming this exact vote; the wallet signs it (no transaction, no fee).
+    const challenge=await api<{nonce:string;message:string}>('/bounties/challenge',{...vote,action:'curate'})
+    const row=await api<Curation>('/bounties/curate',{...vote,challenge_nonce:challenge.nonce,wallet_signature:await signAuraChallenge(w,challenge.message)})
     setNotice(`Curation #${row.id} saved. It also enters Aura's preference dataset. The requester can now pay ${sol(row.reward_lamports).toFixed(4)} SOL on devnet.`);await refresh()
   }catch(e){setError(e instanceof Error?e.message:'Could not save curation')}finally{setBusy(false)}}
   const pay=async(c:Curation)=>{setBusy(true);setError('');setNotice('');try{
@@ -79,7 +83,7 @@ export function CurationMarket(){
   }catch(e){setError(e instanceof Error?e.message:'Payout failed')}finally{setBusy(false)}}
 
   return <section className="curation-market" aria-label="Solana curation market">
-    <div className="card-kicker">06 / CURATION MARKET · SOLANA DEVNET</div><h2>Pay for judgment. <em>Keep the evidence.</em></h2>
+    <div className="card-kicker">CURATION MARKET · SOLANA DEVNET</div><h2><span>Pay for judgment.</span> <em>Keep the evidence.</em></h2>
     <p className="curation-intro">Requesters publish a motion-curation task, humans compare G1 candidates, and accepted curations are paid in SOL. The payout transaction also carries the curation evidence hash, and Aura verifies the transaction server-side before marking work paid. <strong>This demo uses direct requester-approved payouts, not escrow.</strong></p>
     {error&&<div className="generated-library-warning" role="alert">{error}</div>}{notice&&<p className="curation-notice" role="status">{notice}</p>}
     <div className="curation-wallet"><span>{wallet?`Wallet ${shortAddress(wallet.address)}`:'No wallet connected'}</span><button disabled={busy} onClick={()=>void connect().catch(e=>setError(e.message))}>{wallet?'Wallet connected':'Connect Phantom / Solflare'}</button></div>

@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from aura_g1_metrics import report_for_npz
+from aura_io import atomic_write_text
 
 STARTER_PREFIX = "starter-"
 STARTER_GROUP = "starter-general-motion-quality-v1"
@@ -91,6 +92,6 @@ def ensure_starter_motions(base: Path, repo_root: Path | None = None) -> list[di
                 "record train Aura's broad motion-preference reward, not prompt compliance."
             ),
         }
-        record_path.write_text(json.dumps(record, indent=2))
+        atomic_write_text(record_path, json.dumps(record, indent=2))
         out.append(record)
     return out

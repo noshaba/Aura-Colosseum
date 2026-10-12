@@ -116,6 +116,7 @@ Inside the `aura` Conda environment:
 conda install -c conda-forge cffi libsndfile -y
 python -m pip install -U pip setuptools wheel
 python -m pip install -U huggingface_hub soundfile
+python -m pip install pynacl==1.5.0  # ed25519 verification of wallet-signed curations
 ```
 
 This also avoids the common `_cffi_backend` / `soundfile` import problem.

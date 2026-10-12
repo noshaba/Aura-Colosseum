@@ -152,7 +152,7 @@ export function GeneratedMotionLibrary() {
   ]
   return (
     <section className="generated-library" aria-label="Generated G1 motion library and evaluation">
-      <div className="generated-library-heading"><div><div className="card-kicker">02 / BROWSE &amp; INSPECT</div><h2>Generate once. <em>Inspect the result.</em></h2><p>Start with the bundled AIST++ reference motions or browse Aura generations as soon as they arrive. Click any motion to play it in the viewer and inspect its available details.</p></div><button onClick={() => void refresh()}>↻ Refresh library</button></div>
+      <div className="generated-library-heading"><div><div className="card-kicker">BROWSE &amp; INSPECT</div><h2>Generate once. <em>Inspect the result.</em></h2><p>Start with the bundled AIST++ reference motions or browse Aura generations as soon as they arrive. Click any motion to play it in the viewer and inspect its available details.</p></div><button onClick={() => void refresh()}>↻ Refresh library</button></div>
       {error && <div className="generated-library-warning">{error} Generated motions need <code>python aura_library_server.py</code>; the preloaded AIST++ references remain available.</div>}
       <div className="generated-library-layout"><aside className="generated-library-list">
         <div className="generated-library-group-label"><span>PRELOADED AIST++</span><small>{AIST_REFERENCE_MOTIONS.length} references</small></div>

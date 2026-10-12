@@ -158,42 +158,42 @@ export function AuraModel() {
 
   const layers = useMemo<Layer[]>(() => [
     {
-      id: 'trajectory', eyebrow: '01 · Robot trajectory', title: 'G1 motion', shape: 'T × 34 × 3', learnable: false,
+      id: 'trajectory', eyebrow: 'Robot trajectory', title: 'G1 motion', shape: 'T × 34 × 3', learnable: false,
       description: 'The model starts from the saved robot-native Unitree G1 trajectory, not from Aura’s handcrafted quality metrics.',
       detail: 'Each motion contains 34 world-space G1 joint positions over time, with global joint rotations when the generated file provides them.'
     },
     {
-      id: 'features', eyebrow: '02 · Motion representation', title: 'Trajectory features', shape: `${dims.seq} × ${dims.input}`, learnable: false,
+      id: 'features', eyebrow: 'Motion representation', title: 'Trajectory features', shape: `${dims.seq} × ${dims.input}`, learnable: false,
       description: 'Aura converts every trajectory into a fixed-length sequence of pose and dynamics features.',
       detail: 'Per frame: root-relative joint positions, joint velocities, root velocity, root height, 6D global rotations, and a rotation-presence bit. The sequence is resampled to 64 frames and normalized from the training set.'
     },
     {
-      id: 'projection', eyebrow: '03 · Learned embedding', title: 'Input projection', shape: `${dims.input} → ${dims.model}`, learnable: true,
+      id: 'projection', eyebrow: 'Learned embedding', title: 'Input projection', shape: `${dims.input} → ${dims.model}`, learnable: true,
       description: 'A learned linear projection compresses each high-dimensional motion frame into Aura’s latent motion space.',
       detail: `Linear(${dims.input}, ${dims.model}) → LayerNorm → GELU. This is the first learned layer and maps heterogeneous trajectory channels into a shared ${dims.model}-dimensional representation.`
     },
     {
-      id: 'position', eyebrow: '04 · Time identity', title: 'Positional embedding', shape: `${dims.seq} × ${dims.model}`, learnable: true,
+      id: 'position', eyebrow: 'Time identity', title: 'Positional embedding', shape: `${dims.seq} × ${dims.model}`, learnable: true,
       description: 'Learned positional embeddings tell Aura where each frame occurs in the motion.',
       detail: 'The same pose can mean something different at take-off, mid-motion, or landing. A learned temporal embedding is added before attention.'
     },
     {
-      id: 'transformer', eyebrow: '05 · Temporal reasoning', title: `Transformer ×${dims.blocks}`, shape: `${dims.heads} heads · FF ${dims.ff}`, learnable: true,
+      id: 'transformer', eyebrow: 'Temporal reasoning', title: `Transformer ×${dims.blocks}`, shape: `${dims.heads} heads · FF ${dims.ff}`, learnable: true,
       description: 'Self-attention lets every frame compare itself with the rest of the trajectory, learning whole-motion coordination and timing.',
       detail: `${dims.blocks} Transformer encoder blocks use ${dims.heads}-head self-attention with a ${dims.ff}-unit feed-forward network. This is where Aura can learn temporal patterns that simple foot-slide or displacement metrics cannot express.`
     },
     {
-      id: 'pool', eyebrow: '06 · Motion summary', title: 'Temporal pooling', shape: `${dims.seq} × ${dims.model} → ${dims.model}`, learnable: false,
+      id: 'pool', eyebrow: 'Motion summary', title: 'Temporal pooling', shape: `${dims.seq} × ${dims.model} → ${dims.model}`, learnable: false,
       description: 'Aura averages the encoded timeline into one representation for the complete motion.',
       detail: 'Mean pooling preserves a compact fixed-size motion embedding while keeping the reward model intentionally small enough for limited preference data.'
     },
     {
-      id: 'head', eyebrow: '07 · Preference head', title: 'Reward MLP', shape: `${dims.model} → 64 → 1`, learnable: true,
+      id: 'head', eyebrow: 'Preference head', title: 'Reward MLP', shape: `${dims.model} → 64 → 1`, learnable: true,
       description: 'A small neural head converts the motion embedding into one unconstrained scalar reward.',
       detail: `Linear(${dims.model}, 64) → GELU → Dropout → Linear(64, 1). The scalar is meaningful comparatively: higher means the learned model currently ranks that motion above lower-scored motions.`
     },
     {
-      id: 'reward', eyebrow: '08 · Model output', title: 'Aura reward', shape: 'r(motion)', learnable: false,
+      id: 'reward', eyebrow: 'Model output', title: 'Aura reward', shape: 'r(motion)', learnable: false,
       description: 'The final scalar is Aura’s learned human-preference reward for a G1 trajectory.',
       detail: 'That score now drives the live 3D output browser below: you can inspect the actual saved motion, then retarget the same trajectory onto the Unitree G1 or the fairy body.'
     },
@@ -236,7 +236,7 @@ export function AuraModel() {
     setActive(id)
     if (game.unlock(id)) setCelebrate(prev => ({ key: (prev?.key ?? 0) + 1, id, title: layers.find(l => l.id === id)?.title ?? id }))
   }
-  const vizLabels = useMemo<AuraModelVizLabel[]>(() => layers.map(l => ({ id: l.id, number: l.eyebrow.split(' · ')[0], title: l.title, learnable: l.learnable, shape: l.shape, blurb: l.description })), [layers])
+  const vizLabels = useMemo<AuraModelVizLabel[]>(() => layers.map((l, i) => ({ id: l.id, number: String(i + 1).padStart(2, '0'), title: l.title, learnable: l.learnable, shape: l.shape, blurb: l.description })), [layers])
   const vizDescription = `3D diagram of the Aura reward model: a ${dims.seq}-frame G1 motion becomes ${dims.seq} × ${dims.input} trajectory features, a learned projection to ${dims.model} dimensions, a learned positional embedding, ${dims.blocks} Transformer block${dims.blocks === 1 ? '' : 's'} with ${dims.heads} attention heads, temporal mean pooling, a ${dims.model} → 64 → 1 reward MLP, and one scalar reward.`
 
   // Subtle card transition when the selected layer changes (skipped under reduced motion).
@@ -430,7 +430,7 @@ export function AuraModel() {
             <ExplorerModelGame dims={dims} labels={vizLabels} description={vizDescription} pool={gamePool} api={game}
               active={active} playing={playing} onSelect={selectLayer} onStage={setActive} celebrate={celebrate}>
             <div className="aura-model-layer-chips" role="list" aria-label="Aura reward model layers">
-              {layers.map(layer => (
+              {layers.map((layer, i) => (
                 <button
                   key={layer.id}
                   type="button"
@@ -440,7 +440,7 @@ export function AuraModel() {
                   aria-pressed={active === layer.id}
                   title={`${layer.eyebrow} · ${layer.shape}`}
                 >
-                  <span>{layer.eyebrow.split(' · ')[0]}</span>{layer.title}
+                  <span>{String(i + 1).padStart(2, '0')}</span>{layer.title}
                   {game.stats.codex.includes(layer.id) && <i className="aura-model-chip-seen" aria-label="unlocked">✦</i>}
                 </button>
               ))}
@@ -449,7 +449,7 @@ export function AuraModel() {
           </div>
 
           <aside className="aura-model-layer-detail" aria-live="polite" ref={detailRef}>
-            <div className="aura-model-detail-number">{selected.eyebrow.split(' · ')[0]}</div>
+            <div className="aura-model-detail-number">{String(layers.findIndex(l => l.id === selected.id) + 1).padStart(2, '0')}</div>
             <span>{selected.learnable ? 'Learned layer' : 'Deterministic operation'}</span>
             <h3>{selected.title}</h3>
             <code>{selected.shape}</code>

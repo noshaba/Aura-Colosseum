@@ -51,7 +51,7 @@ export function DiscoveryLab(){
   }catch(e){setError(e instanceof Error?e.message:'Could not anchor preference')}finally{setBusy(false)}}
   const a=motions.find(x=>x.id===left);const b=motions.find(x=>x.id===right)
   return <section className="discovery-section" aria-label="G1 human preference discovery">
-    <div className="card-kicker">04 / DISCOVER WITH HUMAN PREFERENCES</div>
+    <div className="card-kicker">DISCOVER WITH HUMAN PREFERENCES</div>
     <h2>Human judgment. <em>Learned selection.</em></h2>
     <p>Compare two generated G1 motions for the <strong>same task</strong>. A real small model learns from saved choices and ranks existing candidates. Ranking does not retrain or steer NVIDIA Kimodo's generator.</p>
     {error&&<div className="generated-library-warning" role="alert">{error}</div>}{notice&&<p role="status">{notice}</p>}
