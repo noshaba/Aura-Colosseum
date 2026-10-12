@@ -1,0 +1,34 @@
+:root {
+  --bg: #f4f1de; --ink: #3d405b; --muted: #5e6073; --line: rgba(61, 64, 91, .14); --panel: #ebe8d7; --accent: #e07a5f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, sans-serif; }
+.cmp { max-width: 1500px; margin: 0 auto; padding: 24px 16px 48px; }
+.cmp-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.cmp-kicker { font: 11px/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 8px 0 0; font-size: 26px; font-weight: 600; }
+h2 { margin: 0 0 6px; font-size: 18px; }
+.cmp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; font-size: 13px; }
+.cmp-controls select, .cmp-controls button, .cmp-file { min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; }
+.cmp-controls button { background: var(--ink); color: var(--bg); cursor: pointer; }
+.cmp-controls button:disabled { opacity: .45; cursor: default; }
+.cmp-file { display: inline-flex; align-items: center; cursor: pointer; background: var(--ink); color: var(--bg); }
+.cmp-file input { display: none; }
+.cmp-status { margin: 14px 0; color: var(--muted); }
+.cmp-views { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cmp-views figure, .cmp-results figure { margin: 0; }
+.cmp-canvas { aspect-ratio: 4 / 3; border-radius: 12px; overflow: hidden; background: #000; }
+.cmp-canvas canvas { display: block; width: 100%; height: 100%; }
+figcaption { margin-top: 6px; font-size: 12px; color: var(--muted); }
+figcaption b { color: var(--ink); font-weight: 600; }
+.cmp-results { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; margin-top: 24px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.cmp-results[hidden] { display: none; }
+.cmp-note { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; }
+th:first-child, td:first-child { text-align: left; }
+tfoot td { font-weight: 700; border-bottom: 0; }
+#diff { width: 100%; border-radius: 8px; background: #000; }
+@media (max-width: 800px) {
+  .cmp-views, .cmp-results { grid-template-columns: 1fr; }
+}

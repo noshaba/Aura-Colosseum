@@ -90,7 +90,6 @@ const compact = (n?: number | null) => {
 }
 
 const pct = (n?: number | null) => n == null ? 'Withheld' : `${(n * 100).toFixed(1)}%`
-const shortHash = (value?: string) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : '—'
 
 export function AuraModel() {
   const [reward, setReward] = useState<RewardState>({ model: null, scores: [] })
@@ -287,7 +286,6 @@ export function AuraModel() {
     }
   }
 
-  const trainedAt = meta?.trained_at ? new Date(meta.trained_at * 1000).toLocaleString() : 'Not trained yet'
 
   return (
     <main className="fx-page aura-model-page">
@@ -476,42 +474,6 @@ export function AuraModel() {
           <div><span>Motion B</span><b>shared Aura model</b><strong>r(B)</strong></div>
           <div className="aura-model-pair-loss"><span>Bradley–Terry preference loss</span><strong>push the chosen motion's reward higher</strong></div>
         </div>
-      </section>
-
-      <section className="aura-model-section aura-model-live-data" aria-labelledby="aura-model-data-title">
-        <div className="aura-model-section-head">
-          <div><span className="aura-model-kicker">Live model state</span><h2 id="aura-model-data-title">What Aura has learned so far.</h2></div>
-          <small className="aura-model-trained-at">Last trained<br /><strong>{trainedAt}</strong></small>
-        </div>
-
-        {meta ? <>
-          <div className="aura-model-validation">
-            <div><span>Training pair accuracy</span><strong>{pct(meta.train_pair_accuracy)}</strong><small>Log loss {meta.train_pair_log_loss ?? '—'}</small></div>
-            <div><span>Held-out pair accuracy</span><strong>{pct(meta.heldout_pair_accuracy)}</strong><small>Log loss {meta.heldout_pair_log_loss ?? '—'}</small></div>
-            <div><span>Sequence length</span><strong>{dims.seq}</strong><small>frames per motion</small></div>
-            <div><span>Latent width</span><strong>{dims.model}</strong><small>dimensions</small></div>
-          </div>
-
-          <div className="aura-model-ranking-head"><h3>Current motion ranking</h3><span>Raw reward is comparative, not a calibrated probability. Click a row to open that motion in the 3D viewer above.</span></div>
-          {reward.scores.length ? <div className="aura-model-ranking">
-            {reward.scores.slice(0, 12).map((score) => {
-              const maxAbs = Math.max(1, ...reward.scores.map(item => Math.abs(item.reward)))
-              const normalized = Math.max(6, Math.min(100, 50 + (score.reward / maxAbs) * 46))
-              const canPreview = motionById.get(score.id)?.preview_file?.endsWith('.g1.json')
-              return <button type="button" className={`aura-model-rank-row ${canPreview ? 'is-clickable' : ''}`} key={score.id} onClick={() => { if (canPreview) setSelectedMotionId(score.id) }} disabled={!canPreview}>
-                <b>#{score.rank}</b><div><span>{score.name || score.id}</span><i><em style={{ width: `${normalized}%` }} /></i></div><strong>{score.reward.toFixed(3)}</strong>
-              </button>
-            })}
-          </div> : <p className="aura-model-empty">The model is trained, but there are no currently scorable library motions.</p>}
-
-          <div className="aura-model-provenance">
-            <div><span>Dataset SHA-256</span><code title={meta.dataset_sha256}>{shortHash(meta.dataset_sha256)}</code></div>
-            <div><span>Model SHA-256</span><code title={meta.model_sha256}>{shortHash(meta.model_sha256)}</code></div>
-          </div>
-        </> : <div className="aura-model-untrained">
-          <strong>No trained checkpoint yet.</strong>
-          <p>{diagnostics ? `Aura currently has ${diagnostics.valid_comparison_count} valid unique comparison${diagnostics.valid_comparison_count === 1 ? '' : 's'} across ${diagnostics.unique_motion_count} unique motion${diagnostics.unique_motion_count === 1 ? '' : 's'}. It needs ${diagnostics.reward_min_comparisons} valid comparisons across at least ${diagnostics.reward_min_motions} unique motions.` : 'Collect at least six generated-motion A/B comparisons covering four distinct motions. Then Aura can train its first reward model.'}</p>
-        </div>}
       </section>
 
       <section className="aura-model-caveat">

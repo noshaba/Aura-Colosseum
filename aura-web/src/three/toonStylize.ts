@@ -64,7 +64,7 @@ const EXT_SRGB = EXT.map(c => c.map(toSrgb))
  * Baked textures by source texture uuid, ref-counted per stylized material. A bake whose
  * source belongs to a session-cached asset (the fairy GLB: `keepBake`) is kept after its
  * last user is gone: viewers mount and unmount as the user navigates (Studio ->
- * Methodology -> Studio), and re-baking her atlas is a full per-pixel pass on the main
+ * Curation -> Studio), and re-baking her atlas is a full per-pixel pass on the main
  * thread each time. Tradeoff: that one <= 1024 px canvas and its texture (about 4 MB of
  * CPU memory, plus the GPU copy while a renderer holds it) stay resident for the session.
  * Per-viewer sources (the G1 marble, XBot maps: a fresh texture per mount) are still

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Splat renderer comparison</title>
+  </head>
+  <body>
+    <!-- Dev-only tool (not part of the app build): Aura's splat renderer vs a reference renderer. -->
+    <main class="cmp">
+      <header class="cmp-head">
+        <div>
+          <span class="cmp-kicker">Dev tool · Gaussian-splat renderers</span>
+          <h1>Aura vs reference, same file, same camera</h1>
+        </div>
+        <div class="cmp-controls">
+          <label class="cmp-file">Load .splat<input id="file" type="file" accept=".splat" /></label>
+          <label>Aura splat cap
+            <select id="cap">
+              <option value="140000" selected>140,000 (app default)</option>
+              <option value="0">No cap</option>
+            </select>
+          </label>
+          <label><input id="flip" type="checkbox" checked /> Flip 180° X</label>
+          <label>Render
+            <select id="mode">
+              <option value="both" selected>Both</option>
+              <option value="aura">Aura only (fair FPS)</option>
+              <option value="ref">Reference only (fair FPS)</option>
+            </select>
+          </label>
+          <button id="run" type="button" disabled>Run image comparison</button>
+        </div>
+      </header>
+      <p id="status" class="cmp-status">Load a .splat file (or open with ?url=…) to start.</p>
+      <section class="cmp-views">
+        <figure><div id="aura" class="cmp-canvas"></div><figcaption>Aura · <b id="aura-info">—</b> · <b id="aura-fps">— fps</b></figcaption></figure>
+        <figure><div id="ref" class="cmp-canvas"></div><figcaption>Reference (GaussianSplats3D 0.4.7) · <b id="ref-fps">— fps</b></figcaption></figure>
+      </section>
+      <section id="results" class="cmp-results" hidden>
+        <div>
+          <h2>Image comparison</h2>
+          <p class="cmp-note">8 views around the scene. PSNR: higher is closer (≥ 30 dB looks near-identical, &lt; 20 dB clearly different). Coverage: share of pixels that aren't background.</p>
+          <table><thead><tr><th>View</th><th>PSNR</th><th>Mean abs. error</th><th>Coverage Aura</th><th>Coverage ref.</th></tr></thead><tbody id="rows"></tbody></table>
+        </div>
+        <figure><canvas id="diff"></canvas><figcaption>Difference of the worst view (×4)</figcaption></figure>
+      </section>
+    </main>
+    <script type="module" src="/src/compare/main.ts"></script>
+  </body>
+</html>

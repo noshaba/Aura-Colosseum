@@ -9,6 +9,7 @@ import {
 } from '../solana'
 import type { WalletConnection } from '../solana'
 import { GeneratedMotionPreview } from './GeneratedMotionPreview'
+import './curation-3d.css'
 
 type Motion={id:string;name:string;model:string;preview_file:string|null}
 type Bounty={

@@ -24,7 +24,8 @@
     "@types/three": "0.170.0",
     "typescript": "5.6.3",
     "vite": "5.4.14",
-    "source-map-js": "1.2.1"
+    "source-map-js": "1.2.1",
+    "@mkkellogg/gaussian-splats-3d": "0.4.7"
   },
   "overrides": {
     "source-map-js": "1.2.1"

@@ -11,19 +11,30 @@ type Props = {
   plan?: ScenePlan | null
   /** Euler rotation applied only to the visual splat, in radians. */
   splatRotation?: [number, number, number]
+  /** Centre the splat and rest it on the floor (re-applied after each rotation). For
+   *  loaded files with an arbitrary origin; captures and the demo keep their placement. */
+  fitSplatToFloor?: boolean
 }
 
 type RigPart = { mesh: THREE.Mesh; joint: number; geomPos: THREE.Vector3; geomQuat: THREE.Quaternion }
 const ZERO_SPLAT_ROTATION: [number, number, number] = [0, 0, 0]
 
-export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotation = ZERO_SPLAT_ROTATION }: Props) {
+export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotation = ZERO_SPLAT_ROTATION, fitSplatToFloor = false }: Props) {
   const mount = useRef<HTMLDivElement>(null)
-  const splatObject = useRef<THREE.Object3D | null>(null)
+  const splatHandle = useRef<ReturnType<typeof createLightweightSplat> | null>(null)
+  const fitRef = useRef(fitSplatToFloor)
+  fitRef.current = fitSplatToFloor
+  const floorRef = useRef(plan?.scene.floor_y ?? 0)
+  floorRef.current = plan?.scene.floor_y ?? 0
   const [status, setStatus] = useState('Load a .splat scene or generate a scene-aware motion.')
 
   useEffect(() => {
-    if (splatObject.current) splatObject.current.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
-  }, [splatRotation])
+    const splat = splatHandle.current
+    if (!splat) return
+    splat.object.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
+    if (fitSplatToFloor) splat.placeOnFloor(floorRef.current)
+    else splat.object.position.set(0, 0, 0)
+  }, [splatRotation, fitSplatToFloor])
 
   useEffect(() => {
     const el = mount.current
@@ -60,7 +71,8 @@ export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotati
       try {
         splat = createLightweightSplat(splatBuffer)
         splat.object.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
-        splatObject.current = splat.object
+        if (fitRef.current) splat.placeOnFloor(floorRef.current)
+        splatHandle.current = splat
         scene.add(splat.object)
         setStatus(`Gaussian-splat preview · ${splat.renderedSplats.toLocaleString()} / ${splat.totalSplats.toLocaleString()} splats`)
       } catch (error) {
@@ -135,7 +147,7 @@ export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotati
     raf = requestAnimationFrame(tick)
 
     return () => {
-      disposed = true; cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); splatObject.current = null; splat?.dispose()
+      disposed = true; cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); splatHandle.current = null; splat?.dispose()
       rig.forEach(part => part.mesh.geometry.dispose())
       scene.traverse(obj => {
         if (obj instanceof THREE.Mesh && obj !== floor) {

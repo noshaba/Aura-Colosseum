@@ -1,0 +1,145 @@
+/* Curation Market: same "hero 3D pedestal" language as Scene Lab (scene-lab-3d.css) and the home
+   hero generator (hero-arena.css --gp-*). Tokens use the same --s3d-* names and values as Scene Lab. */
+.fx-page.fx-curation-page {
+  --s3d-ink: #3d405b; --s3d-rim: #d7c79e; --s3d-disc: #e0daca; --s3d-well: #f4f1de;
+  --s3d-band: linear-gradient(90deg, #d2c4b1 0%, #d9cebb 35%, #d6cab7 60%, #b8a286 100%);
+  --s3d-shadow: rgba(29, 31, 51, .3); --s3d-focus: #81b29a;
+  --s3d-font: var(--fx-font, 'Figtree', Arial, sans-serif);
+  --s3d-line: color-mix(in srgb, var(--s3d-ink) 14%, transparent);
+  --s3d-muted: color-mix(in srgb, var(--s3d-ink) 78%, transparent);
+}
+.fx-page.fx-curation-page :is(.curation-create button, .curation-pair button, .curation-ledger button) {
+  --s3d-rim: #c9654a; --s3d-disc: #e8967c;
+  --s3d-band: linear-gradient(90deg, #a9553f 0%, #b45d46 40%, #ad5842 65%, #8f4634 100%);
+}
+
+/* ---- page header (Scene Lab hero typography) ---- */
+.fx-page.fx-curation-page .curation-market { max-width: 1100px; margin: 0 auto; padding: 0; border: 0; background: transparent; color: var(--s3d-ink); }
+.fx-page.fx-curation-page .curation-market > .card-kicker { font-family: var(--fx-font-mono, ui-monospace, 'SFMono-Regular', Menlo, monospace); font-size: 11px; color: var(--fx-ink-40, #6b5a47); }
+.fx-page.fx-curation-page .curation-market > h2 { font-size: clamp(40px, 6.4vw, 92px); line-height: .92; letter-spacing: -.05em; font-weight: 500; margin: 18px 0 26px; }
+.fx-page.fx-curation-page .curation-market > h2 em { font-family: inherit; font-style: normal; color: #b4533a; font-weight: 500; }
+.fx-page.fx-curation-page .curation-intro { max-width: 780px; margin: 0 0 40px; font-size: 17px; line-height: 1.65; color: var(--fx-ink-64, #5c4d3d); }
+.fx-page.fx-curation-page .curation-intro strong { color: var(--s3d-ink); }
+
+/* ---- notices ---- */
+.fx-page.fx-curation-page :is(.curation-notice, .generated-library-warning) {
+  margin: 0 0 24px; padding: 14px 18px; border: 2px solid var(--s3d-ink); border-radius: 22px;
+  font-size: 14px; line-height: 1.55; color: #24263a; box-shadow: 4px 5px 0 rgba(29, 31, 51, .18);
+}
+.fx-page.fx-curation-page .curation-notice { background: #dfeadb; }
+.fx-page.fx-curation-page .generated-library-warning { background: #f6d9cd; }
+
+/* ---- raised pedestal panels ---- */
+.fx-page.fx-curation-page :is(.curation-wallet, .curation-create, .curation-workspace > aside, .curation-task, .curation-ledger) {
+  border: 9px solid var(--s3d-rim); border-radius: 32px; background: var(--s3d-disc); color: var(--s3d-ink);
+  box-shadow: 0 8px 0 0 #b8a286, 0 0 0 2px var(--s3d-ink), 0 8px 0 2px var(--s3d-ink), 12px 16px 8px rgba(29, 31, 51, .22);
+  box-sizing: border-box; margin: 0 0 56px; min-width: 0;
+}
+.fx-page.fx-curation-page .curation-wallet { padding: 12px 14px 12px 24px; gap: 12px 20px; flex-wrap: wrap; font-size: 14px; font-weight: 600; margin-bottom: 44px; }
+.fx-page.fx-curation-page .curation-create { padding: 26px 28px; gap: 20px 40px; grid-template-columns: minmax(0, 1.5fr) minmax(260px, .5fr); }
+.fx-page.fx-curation-page .curation-create > div { gap: 8px; }
+.fx-page.fx-curation-page :is(.curation-create label, .curation-pair label) {
+  margin-top: 8px; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--s3d-muted);
+  font-family: var(--fx-font-mono, ui-monospace, 'SFMono-Regular', Menlo, monospace);
+}
+.fx-page.fx-curation-page .curation-create > div > label:first-child { margin-top: 0; }
+.fx-page.fx-curation-page .curation-create p { font-size: 13px; line-height: 1.6; color: var(--s3d-muted); margin: 6px 0 0; }
+.fx-page.fx-curation-page .curation-create p strong { color: var(--s3d-ink); }
+.fx-page.fx-curation-page .curation-workspace { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 0 32px; margin: 0; border: 0; min-height: 0; align-items: start; }
+.fx-page.fx-curation-page .curation-workspace > aside { padding: 18px 16px 20px; }
+.fx-page.fx-curation-page .curation-task { padding: 20px 22px 22px; }
+.fx-page.fx-curation-page :is(.curation-workspace > aside h3, .curation-task h3, .curation-ledger h3) { font-size: 18px; font-weight: 700; margin: 4px 4px 12px; }
+.fx-page.fx-curation-page .curation-task h3 { margin-left: 0; }
+.fx-page.fx-curation-page .curation-ledger { padding: 18px 22px 8px; }
+.fx-page.fx-curation-page .curation-task-head { border-bottom: 2px solid var(--s3d-line); padding-bottom: 16px; }
+.fx-page.fx-curation-page .curation-task-head p { font-size: 14px; line-height: 1.55; }
+.fx-page.fx-curation-page .curation-task-head small, .fx-page.fx-curation-page .curation-ledger small { font-size: 12px; color: var(--s3d-muted); }
+.fx-page.fx-curation-page .curation-task-head strong { font-size: 20px; }
+.fx-page.fx-curation-page :is(.curation-task-head a, .curation-ledger a) { font-size: 13px; font-weight: 600; color: #8a3e2a; text-underline-offset: 3px; }
+.fx-page.fx-curation-page :is(.curation-task-head a, .curation-ledger a):hover { text-decoration: underline; }
+.fx-page.fx-curation-page .curation-ledger article { border-bottom: 2px solid var(--s3d-line); padding: 14px 0; }
+.fx-page.fx-curation-page .curation-ledger strong { font-size: 14px; }
+.fx-page.fx-curation-page .curation-pair { gap: 18px; }
+.fx-page.fx-curation-page .curation-pair article { border: 2px solid var(--s3d-line); border-radius: 22px; background: var(--s3d-well); padding: 14px; }
+.fx-page.fx-curation-page .curation-pair .generated-preview { border-radius: 14px; overflow: hidden; }
+.fx-page.fx-curation-page .curation-caveat { max-width: 900px; margin: 0; font-size: 12px; line-height: 1.7; color: var(--fx-ink-64, #5c4d3d); }
+.fx-page.fx-curation-page .curation-caveat strong { color: var(--s3d-ink); }
+
+/* ---- bounty list rows ---- */
+.fx-page.fx-curation-page .curation-workspace > aside > button {
+  min-height: 44px; margin-top: 8px; padding: 12px 14px; gap: 4px; border: 2px solid var(--s3d-line); border-radius: 18px;
+  background: var(--s3d-well); color: var(--s3d-ink); font-family: var(--s3d-font); transition: transform .14s ease-out, border-color .14s;
+}
+.fx-page.fx-curation-page .curation-workspace > aside > button:hover { transform: translateY(-2px); border-color: var(--s3d-ink); }
+.fx-page.fx-curation-page .curation-workspace > aside > button.active { border-color: var(--s3d-ink); background: #fff; box-shadow: 3px 4px 0 var(--s3d-rim); }
+.fx-page.fx-curation-page .curation-workspace > aside > button:focus-visible { outline: 3px solid var(--s3d-focus); outline-offset: 3px; }
+.fx-page.fx-curation-page .curation-workspace > aside strong { font-size: 14px; }
+.fx-page.fx-curation-page .curation-workspace > aside small { font-size: 12px; color: var(--s3d-muted); }
+.fx-page.fx-curation-page .curation-workspace > aside span { font-size: 10px; font-weight: 600; letter-spacing: .1em; color: #8a3e2a; font-family: var(--fx-font-mono, ui-monospace, monospace); }
+
+/* ---- compact empty states ---- */
+.fx-page.fx-curation-page :is(.curation-workspace > aside > p, .curation-task > p, .curation-ledger > p) {
+  margin: 4px 0 8px; padding: 18px 16px; border: 2px dashed color-mix(in srgb, var(--s3d-ink) 28%, transparent); border-radius: 18px;
+  background: var(--s3d-well); text-align: center; font-size: 14px; line-height: 1.5; color: var(--s3d-muted);
+}
+
+/* ---- cream wells ---- */
+.fx-page.fx-curation-page :is(.curation-create input, .curation-create textarea, .curation-pair select) {
+  width: 100%; box-sizing: border-box; min-height: 44px; padding: 0 18px; border: 2px solid color-mix(in srgb, var(--s3d-ink) 16%, transparent);
+  border-radius: 999px; background: var(--s3d-well); color: var(--s3d-ink); font-family: var(--s3d-font); font-size: 14px; outline: none;
+}
+.fx-page.fx-curation-page .curation-pair select { margin: 8px 0 10px; text-overflow: ellipsis; }
+.fx-page.fx-curation-page .curation-create textarea { border-radius: 22px; min-height: 96px; padding: 12px 18px; line-height: 1.5; resize: vertical; }
+.fx-page.fx-curation-page :is(.curation-create input, .curation-create textarea, .curation-pair select):focus-visible {
+  border-color: var(--s3d-ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--s3d-focus) 55%, transparent);
+}
+
+/* ---- pedestal buttons ---- */
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button) {
+  --s3d-lift: 0px;
+  position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+  min-height: 44px; min-width: 44px; margin: 0 0 7px; padding: 12px 22px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--s3d-ink); font-family: var(--s3d-font); font-size: 14px; font-weight: 600; line-height: 1.2; text-align: center; cursor: pointer;
+  filter: drop-shadow(2px 0 0 var(--s3d-ink)) drop-shadow(-2px 0 0 var(--s3d-ink)) drop-shadow(0 2px 0 var(--s3d-ink)) drop-shadow(0 -2px 0 var(--s3d-ink)) drop-shadow(4px 4px 2px var(--s3d-shadow));
+  transition: transform .14s ease-out;
+}
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button)::before {
+  content: ""; position: absolute; z-index: -2; left: -3px; right: -3px; top: 45%; bottom: -7px;
+  border-radius: 0 0 999px 999px; background: var(--s3d-band); clip-path: polygon(3px 0, calc(100% - 3px) 0, 100% 100%, 0 100%);
+  transform: translateY(var(--s3d-lift)); transition: transform .14s ease-out;
+}
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button)::after {
+  content: ""; position: absolute; z-index: -1; inset: 0; box-sizing: border-box; border: 5px solid var(--s3d-rim); border-radius: 999px; background: var(--s3d-disc);
+}
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button):hover:not(:disabled) {
+  transform: translateY(-2px); --s3d-lift: 2px;
+}
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button):active:not(:disabled) {
+  transform: translateY(4px); --s3d-lift: -4px; transition-duration: .05s;
+}
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button):focus-visible { outline: 3px solid var(--s3d-focus); outline-offset: 5px; }
+.fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button):disabled { opacity: .7; cursor: not-allowed; }
+.fx-page.fx-curation-page :is(.curation-create button, .curation-pair button, .curation-ledger button) { color: #2a1812; }
+.fx-page.fx-curation-page .curation-create button { width: 100%; margin-top: 14px; min-height: 52px; font-size: 15px; }
+.fx-page.fx-curation-page .curation-pair button { width: 100%; margin-top: 12px; }
+
+@media (max-width: 900px) {
+  .fx-page.fx-curation-page .curation-create { grid-template-columns: 1fr; }
+  .fx-page.fx-curation-page .curation-workspace { grid-template-columns: 1fr; }
+  .fx-page.fx-curation-page .curation-workspace > aside { max-height: none; border-right-width: 9px; border-bottom-width: 9px; }
+  .fx-page.fx-curation-page .curation-ledger article { align-items: flex-start; }
+}
+@media (max-width: 650px) {
+  .fx-page.fx-curation-page :is(.curation-wallet, .curation-create, .curation-workspace > aside, .curation-task, .curation-ledger) { border-width: 7px; border-radius: 26px; margin-bottom: 48px; }
+  .fx-page.fx-curation-page .curation-create { padding: 20px 16px; }
+  .fx-page.fx-curation-page .curation-task { padding: 16px 14px; }
+  .fx-page.fx-curation-page .curation-wallet { padding: 12px 14px; }
+  .fx-page.fx-curation-page .curation-wallet button { width: 100%; }
+  .fx-page.fx-curation-page .curation-intro { font-size: 16px; margin-bottom: 28px; }
+  .fx-page.fx-curation-page .curation-market > h2 { font-size: clamp(36px, 11.5vw, 54px); }
+  .fx-page.fx-curation-page .curation-ledger ~ .curation-caveat { margin-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-page.fx-curation-page *, .fx-page.fx-curation-page *::before { transition: none !important; }
+  .fx-page.fx-curation-page :is(.curation-wallet button, .curation-create button, .curation-task button, .curation-ledger button, .curation-workspace > aside > button):is(:hover, :active) { transform: none; }
+}

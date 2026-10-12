@@ -9,7 +9,6 @@ export const REVEAL_SELECTOR = [
   '.fx-about',
   '.fx-cta',
   '.fx-cases',
-  '.method-grid',
   '.fx-footer__content',
 ].join(',')
 
