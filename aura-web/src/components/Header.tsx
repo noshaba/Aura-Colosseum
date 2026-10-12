@@ -37,7 +37,6 @@ const nav: { id: Page; label: string }[] = [
   { id: 'scene', label: 'Scene lab' },
   { id: 'model', label: 'Aura model' },
   { id: 'curation', label: 'Curation' },
-  { id: 'methodology', label: 'Methodology' },
 ]
 
 export function Header({ page, onPage, onWallet, walletAddress }: Props) {

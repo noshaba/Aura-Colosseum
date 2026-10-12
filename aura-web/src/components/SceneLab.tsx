@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GeneratedG1RobotPreview } from './GeneratedG1RobotPreview'
 import { SplatG1SceneViewer } from './SplatG1SceneViewer'
+import { SceneLabHeroSplat } from './SceneLabHeroSplat'
+import { convertGaussianPlyToSplat } from '../three/plyToSplat'
 import './scene-lab.css'
+import './scene-lab-3d.css'
 
 type Obstacle = { name: string; x: number; z: number; width: number; depth: number }
 type SceneProxy = {
@@ -109,6 +112,12 @@ export function SceneLab() {
   const [splatBuffer, setSplatBuffer] = useState<ArrayBuffer | null>(null)
   const [splatName, setSplatName] = useState('')
   const [splatRotation, setSplatRotation] = useState<[number, number, number]>([0, 0, 0])
+  // Loaded/converted files have arbitrary origins: auto-place them on the floor. Captures and the demo keep their own placement.
+  const [splatFit, setSplatFit] = useState(false)
+  // Object URL of the last .ply → .splat conversion, offered as a download.
+  const [convertedSplat, setConvertedSplat] = useState<{ url: string; name: string } | null>(null)
+  const [converting, setConverting] = useState(false)
+  useEffect(() => () => { if (convertedSplat) URL.revokeObjectURL(convertedSplat.url) }, [convertedSplat])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -200,7 +209,7 @@ export function SceneLab() {
           if (!splatResponse.ok) throw new Error(`Splat download failed (${splatResponse.status})`)
           setSplatBuffer(await splatResponse.arrayBuffer())
           // Camera reconstructions are converted server-side from Nerfstudio Z-up to Aura/Three.js Y-up.
-          setSplatRotation([0, 0, 0])
+          setSplatRotation([0, 0, 0]); setSplatFit(false)
           setSplatName(`${data.name || 'Camera scene'} · camera capture`)
           loadedCapture.current = data.id
           setMessage(`Camera reconstruction loaded · ${data.splat_count?.toLocaleString() || 'Gaussian'} splats`)
@@ -359,6 +368,7 @@ export function SceneLab() {
 
   return <main className="fx-page scene-lab-page">
     <section className="scene-lab-hero">
+      <SceneLabHeroSplat />
       <span className="card-kicker">SCENE LAB · CAMERA → GAUSSIAN SPLAT → G1</span>
       <h1>Capture a room.<br />Train inside it.</h1>
       <p>Record a static environment with your camera. Aura can pass that video through a Gaussian-splat reconstruction backend, load the result directly into Scene Lab, plan against an explicit geometry proxy, and place Kimodo-generated G1 motion inside the captured environment.</p>
@@ -372,7 +382,7 @@ export function SceneLab() {
             try {
               const response = await fetch(`${import.meta.env.BASE_URL || '/'}demo/aura-scene-demo.splat`)
               if (!response.ok) throw new Error(`Demo splat request failed (${response.status})`)
-              setSplatBuffer(await response.arrayBuffer()); setSplatRotation([0, 0, 0]); setSplatName('Synthetic demo room'); setError('')
+              setSplatBuffer(await response.arrayBuffer()); setSplatRotation([0, 0, 0]); setSplatFit(false); setSplatName('Synthetic demo room'); setError('')
             } catch (e) { setError(e instanceof Error ? e.message : 'Could not load demo splat') }
           }}>Demo scene</button>
           <label className="scene-lab-upload">Load .splat<input type="file" accept=".splat" onChange={async e => {
@@ -382,13 +392,38 @@ export function SceneLab() {
               setSplatBuffer(await file.arrayBuffer())
               // Common standalone .splat exports arrive inverted relative to Aura's Y-up scene.
               // Start manual files with a 180° X correction; the toolbar below can adjust other conventions.
-              setSplatRotation([Math.PI, 0, 0])
+              setSplatRotation([Math.PI, 0, 0]); setSplatFit(true)
               setSplatName(file.name)
               setMessage('Loaded .splat with Aura upright correction. Use Scene orientation if this file uses another coordinate convention.')
               setError('')
             }
             catch { setError('Could not read the selected .splat file') }
           }} /></label>
+          <label className={`scene-lab-upload ${converting ? 'is-busy' : ''}`}>{converting ? 'Converting…' : 'Convert .ply'}<input type="file" accept=".ply" disabled={converting} onChange={async e => {
+            const input = e.currentTarget
+            const file = input.files?.[0]
+            input.value = '' // let the same file be picked again
+            if (!file) return
+            setConverting(true); setError(''); setMessage(`Converting ${file.name}…`)
+            try {
+              // Yield a frame so the busy state paints before the synchronous conversion.
+              await new Promise(r => requestAnimationFrame(() => r(null)))
+              const { splat, count, skipped } = convertGaussianPlyToSplat(await file.arrayBuffer())
+              const name = file.name.replace(/\.ply$/i, '') + '.splat'
+              setConvertedSplat({ url: URL.createObjectURL(new Blob([splat], { type: 'application/octet-stream' })), name })
+              setSplatBuffer(splat)
+              // Converted files keep raw axes, like a downloaded .splat: same upright correction as Load .splat.
+              setSplatRotation([Math.PI, 0, 0]); setSplatFit(true)
+              setSplatName(name)
+              setMessage(`Converted ${file.name} → ${name} · ${count.toLocaleString()} splats${skipped ? ` (${skipped.toLocaleString()} transparent dropped)` : ''}. Use Scene orientation if it looks rotated.`)
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Could not convert the selected .ply file')
+              setMessage('')
+            } finally {
+              setConverting(false)
+            }
+          }} /></label>
+          {convertedSplat && <a className="scene-lab-download" href={convertedSplat.url} download={convertedSplat.name}>↓ Download .splat</a>}
         </div></div>
 
         {splatBuffer && !cameraOpen && <div className="scene-splat-orientation">
@@ -410,7 +445,7 @@ export function SceneLab() {
               <button type="button" onClick={closeCamera} disabled={recording}>Cancel</button>
             </div>
           </div>
-        </div> : <SplatG1SceneViewer previewFile={previewUrl} splatBuffer={splatBuffer} plan={plan} splatRotation={splatRotation} />}
+        </div> : <SplatG1SceneViewer previewFile={previewUrl} splatBuffer={splatBuffer} plan={plan} splatRotation={splatRotation} fitSplatToFloor={splatFit} />}
 
         {capture && <div className={`scene-capture-progress is-${capture.status}`}>
           <div className="scene-capture-progress-head"><div><span>Camera reconstruction</span><strong>{capture.stage || capture.status}</strong></div><small>{capture.duration_s ? `${capture.duration_s.toFixed(1)}s scan · ` : ''}{formatBytes(capture.bytes)}</small></div>

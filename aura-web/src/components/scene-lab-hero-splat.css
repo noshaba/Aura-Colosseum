@@ -1,0 +1,29 @@
+/* Scene Lab hero: Gaussian-splat backdrop (SceneLabHeroSplat.tsx).
+   Kept separate from scene-lab.css on purpose. The layer is positioned against the page
+   (top of page -> just below the hero; height set from JS) and sits under all page content
+   via an isolated stacking context, so no hero/padding rules need to change. */
+.fx-page.scene-lab-page { position: relative; isolation: isolate; }
+.scene-lab-hero-splat {
+  position: absolute; left: 0; right: 0; top: 0; height: 760px;
+  z-index: -1; pointer-events: none; overflow: hidden;
+  opacity: 0; transition: opacity 1.4s ease;
+}
+.scene-lab-hero-splat.is-ready { opacity: 1; }
+.scene-lab-hero-splat__canvas, .scene-lab-hero-splat__canvas canvas { display: block; width: 100%; height: 100%; }
+.scene-lab-hero-splat__canvas { opacity: .9; }
+/* Scrim: cream wash over the copy column (left), soft top under the header, and a full fade
+   at the bottom edge where the panels start. */
+.scene-lab-hero-splat__scrim {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(to bottom, var(--fx-cream) 0%, rgba(248, 240, 227, 0) 20%, rgba(248, 240, 227, 0) 62%, var(--fx-cream) 100%),
+    linear-gradient(to right, rgba(248, 240, 227, .94) 0%, rgba(248, 240, 227, .8) 34%, rgba(248, 240, 227, .1) 66%, rgba(248, 240, 227, 0) 100%);
+}
+@media (max-width: 650px) {
+  .scene-lab-hero-splat__canvas { opacity: .42; }
+  .scene-lab-hero-splat__scrim {
+    background:
+      linear-gradient(to bottom, var(--fx-cream) 0%, rgba(248, 240, 227, .55) 30%, rgba(248, 240, 227, .55) 60%, var(--fx-cream) 100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) { .scene-lab-hero-splat { transition: none; } }

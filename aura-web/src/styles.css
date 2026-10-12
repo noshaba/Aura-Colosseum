@@ -102,10 +102,10 @@ h1 em { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; colo
 .page-footer-line span { letter-spacing:.26em; color:#747872; }
 .page-footer-line i { margin-left:auto; font-style:normal; }
 .lab-grid { display:grid; grid-template-columns: 350px 1fr; gap:16px; }
-.lab-card, .method-card, .history-card, .reward-card { background:#fbfbf9; border:1px solid #dedfd9; border-radius:5px; }
+.lab-card, .history-card, .reward-card { background:#fbfbf9; border:1px solid #dedfd9; border-radius:5px; }
 .lab-card { padding:25px 20px; }
-.lab-card h2, .method-card h2, .reward-card h2, .history-card h2 { font-size:17px; font-weight:400; margin:15px 0 14px; }
-.lab-card p, .method-card p, .reward-card p { color:#7f847d; font-size:11px; line-height:1.55; }
+.lab-card h2, .reward-card h2, .history-card h2 { font-size:17px; font-weight:400; margin:15px 0 14px; }
+.lab-card p, .reward-card p { color:#7f847d; font-size:11px; line-height:1.55; }
 .big-metric { margin:30px 0 21px; display:flex; align-items:end; gap:10px; }
 .big-metric strong { font-family:'Playfair Display',Georgia,serif; font-weight:400; font-size:46px; line-height:.8; }
 .big-metric span { font-size:8px; color:#9a9d97; }
@@ -151,9 +151,6 @@ h1 em { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; colo
 .history-list > div { display:grid; grid-template-columns:55px 1fr auto; align-items:center; min-height:42px; border-bottom:1px solid #e9eae5; font-size:9px; }
 .history-list span, .history-list small { color:#999d97; }
 .history-list b { font-weight:400; }
-.method-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.method-card { padding:24px 20px; min-height:254px; }
-.method-card a { font-size:9px; color:#515853; }
 .legal-footer { color:#969b94; font-size:8px; padding-top:20px; line-height:1.5; }
 
 .modal-backdrop { position:fixed; inset:0; background:rgba(18,20,18,.53); display:grid; place-items:center; z-index:100; padding:20px; }
@@ -173,7 +170,7 @@ h1 em { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; colo
 @media (max-width: 850px) {
   .evaluate-hero { grid-template-columns:1fr; gap:16px; }
   .hero-instruction { justify-self:start; }
-  .evaluate-grid, .lab-grid, .contrib-grid, .method-grid { grid-template-columns:1fr; }
+  .evaluate-grid, .lab-grid, .contrib-grid { grid-template-columns:1fr; }
   .evaluation-card { min-height:auto; }
   .stat-strip { grid-template-columns:1fr; }
   .stat-strip > div { border-right:0; border-bottom:1px solid var(--line); }
@@ -441,7 +438,6 @@ h1 em {
 
 .motion-card,
 .lab-card,
-.method-card,
 .history-card,
 .reward-card,
 .evaluation-card,
@@ -453,7 +449,6 @@ h1 em {
 }
 .motion-card::before,
 .lab-card::before,
-.method-card::before,
 .history-card::before,
 .reward-card::before,
 .evaluation-card::before,
@@ -561,7 +556,6 @@ h1 em {
 }
 .evaluation-card h2,
 .lab-card h2,
-.method-card h2,
 .reward-card h2,
 .history-card h2 {
   font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
@@ -569,7 +563,6 @@ h1 em {
 }
 .evaluation-card > p,
 .lab-card p,
-.method-card p,
 .reward-card p,
 .stat-strip p span,
 .legal-footer,
@@ -617,7 +610,6 @@ h1 em {
 .history-list small,
 .metric-trio strong em,
 .lab-card small,
-.method-card a,
 .status-card a,
 .wallet-modal small {
   color: #8b7b6e;
@@ -684,7 +676,6 @@ h1 em {
   background: rgba(255,255,255,.5);
 }
 .history-list, .history-list > div { border-color: rgba(166, 130, 72, .16); }
-.method-card a { text-decoration-color: rgba(183, 141, 71, .4); }
 .legal-footer a { color: var(--gold-deep); }
 .modal-backdrop {
   background: rgba(20, 17, 15, .54);
@@ -1070,7 +1061,6 @@ h1 em {
 .evaluate-grid,
 .lab-grid,
 .contrib-grid,
-.method-grid,
 .history-card,
 .info-ribbon,
 .legal-footer {
@@ -1150,7 +1140,6 @@ h1 em {
 .hero-instruction span,
 .evaluation-card,
 .lab-card,
-.method-card,
 .reward-card,
 .history-card,
 .stat-strip,
@@ -1225,14 +1214,12 @@ h1 em {
   background: linear-gradient(180deg, rgba(178,91,104,.04), rgba(255,255,255,.92));
 }
 .reward-card .card-kicker,
-.method-card .card-kicker,
 .lab-card .card-kicker,
 .evaluation-kicker,
 .study-label {
   text-shadow: 0 0 0 rgba(0,0,0,0);
 }
 .reward-card,
-.method-card,
 .lab-card,
 .evaluation-card,
 .history-card {
@@ -1547,16 +1534,14 @@ button:active:not(:disabled) {
 
   .evaluate-grid,
   .lab-grid,
-  .contrib-grid,
-  .method-grid {
+  .contrib-grid {
     grid-template-columns: 1fr;
   }
 
   .evaluation-card,
   .lab-card,
   .reward-card,
-  .method-card,
-  .history-card {
+    .history-card {
     min-height: 0;
   }
 
@@ -1804,7 +1789,6 @@ select {
 .wallet-modal h2,
 .evaluation-card h2,
 .lab-card h2,
-.method-card h2,
 .reward-card h2,
 .history-card h2 {
   font-family: var(--font-display);
@@ -2070,7 +2054,6 @@ h1 em {
 .hero-instruction,
 .evaluation-card > p,
 .lab-card p,
-.method-card p,
 .reward-card p,
 .lab-card small,
 .stat-strip p span,
@@ -2086,7 +2069,6 @@ h1 em {
 .hero-instruction { font-size: 12px; }
 .evaluation-card > p,
 .lab-card p,
-.method-card p,
 .reward-card p,
 .physical-form-card > p { font-size: 11.5px; }
 .choice { font-size: 11px; }
@@ -2462,7 +2444,12 @@ h1 em {
 .aura-skip-matchup:disabled { opacity: .45; cursor: default; }
 
 /* Dedicated Solana curation page: keep the marketplace visible without cluttering Motion Studio. */
-.fx-curation-page {
+/* Doubled class so it beats the generic .fx-page padding reset; 172px clears the fixed header like the other pages. */
+.fx-page.fx-curation-page {
   min-height: 70vh;
-  padding-top: clamp(5.5rem, 8vw, 7.5rem);
+  padding: 172px var(--fx-gutter, 32px) 120px;
+  overflow-x: clip;
+}
+@media (max-width: 650px) {
+  .fx-page.fx-curation-page { padding: 120px 16px 80px; }
 }

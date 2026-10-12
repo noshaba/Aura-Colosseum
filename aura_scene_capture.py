@@ -315,9 +315,16 @@ def _convert_gaussian_ply_to_splat(ply_path: Path, output_path: Path) -> int:
         quats = values[valid][:, [idx[f"rot_{i}"] for i in range(4)]].astype(np.float32, copy=False)
         norms = np.linalg.norm(quats, axis=1, keepdims=True)
         quats = quats / np.maximum(norms, 1e-8)
+        # The means were rotated Z-up -> Y-up above (a -90° turn about X); apply the same
+        # rotation to each splat's orientation, q' = q_x(-90°) ⊗ q, or the ellipsoids
+        # end up tilted relative to their positions.
+        w, x, y, z = quats.T
+        c = np.float32(np.sqrt(0.5))
+        quats = np.stack((c * (w + x), c * (x - w), c * (y + z), c * (z - y)), axis=1)
         rotations = np.clip(quats * 128.0 + 128.0, 0.0, 255.0).astype(np.uint8)
     else:
-        rotations = np.tile(np.asarray([128, 128, 128, 255], dtype=np.uint8), (len(means), 1))
+        # Identity orientation (w, x, y, z) = (1, 0, 0, 0), byte-encoded.
+        rotations = np.tile(np.asarray([255, 128, 128, 128], dtype=np.uint8), (len(means), 1))
 
     record = np.dtype([("mean", "<f4", (3,)), ("scale", "<f4", (3,)), ("color", "u1", (4,)), ("rotation", "u1", (4,))])
     packed = np.empty(len(means), dtype=record)
@@ -325,6 +332,9 @@ def _convert_gaussian_ply_to_splat(ply_path: Path, output_path: Path) -> int:
     packed["scale"] = scales
     packed["color"] = colors
     packed["rotation"] = rotations
+    # Most visible first (volume × opacity), matching the reference .splat converter.
+    importance = np.prod(scales, axis=1) * alpha
+    packed = packed[np.argsort(-importance, kind="stable")]
     output_path.write_bytes(packed.tobytes())
     return len(means)
 

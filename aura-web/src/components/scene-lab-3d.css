@@ -1,0 +1,128 @@
+/* Scene Lab "pedestal" look: same visual language as the home hero generator (hero-arena.css):
+   sandy rim + lit face, tapered shaded side band, 2px ink outline, ground shadow, and a press
+   that sinks. Values mirror the --gp-* tokens of .hero-arena; kept as --s3d-* so Scene Lab
+   does not depend on the hero stylesheet being loaded. */
+.fx-page.scene-lab-page {
+  --s3d-ink: #3d405b; --s3d-rim: #d7c79e; --s3d-disc: #e0daca; --s3d-well: #f4f1de;
+  --s3d-band: linear-gradient(90deg, #d2c4b1 0%, #d9cebb 35%, #d6cab7 60%, #b8a286 100%);
+  --s3d-shadow: rgba(29, 31, 51, .3); --s3d-focus: #81b29a;
+  --s3d-font: var(--fx-font, 'Figtree', Arial, sans-serif);
+}
+/* Accent (primary): terracotta face with a deeper rim; ink text is 4.9:1 on it, so use eggshell-free dark ink. */
+.fx-page.scene-lab-page :is(.is-camera, .scene-lab-prompt button) {
+  --s3d-rim: #c9654a; --s3d-disc: #e8967c;
+  --s3d-band: linear-gradient(90deg, #a9553f 0%, #b45d46 40%, #ad5842 65%, #8f4634 100%);
+}
+
+/* ---- pedestal buttons ---- */
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+) {
+  --s3d-lift: 0px;
+  position: relative; isolation: isolate;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px; min-width: 44px;
+  margin-top: 0; margin-bottom: 7px; padding: 0 20px;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--s3d-ink);
+  font-family: var(--s3d-font); font-size: 14px; font-weight: 600; letter-spacing: 0; line-height: 1;
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+  filter:
+    drop-shadow(2px 0 0 var(--s3d-ink)) drop-shadow(-2px 0 0 var(--s3d-ink))
+    drop-shadow(0 2px 0 var(--s3d-ink)) drop-shadow(0 -2px 0 var(--s3d-ink))
+    drop-shadow(4px 4px 2px var(--s3d-shadow));
+  transition: transform .14s ease-out;
+}
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+)::before { /* tapered side band under the face */
+  content: ""; position: absolute; z-index: -2;
+  left: -3px; right: -3px; top: 45%; bottom: -7px;
+  border-radius: 0 0 999px 999px; background: var(--s3d-band);
+  clip-path: polygon(3px 0, calc(100% - 3px) 0, 100% 100%, 0 100%);
+  transform: translateY(var(--s3d-lift)); transition: transform .14s ease-out;
+}
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+)::after { /* lit face + rim */
+  content: ""; position: absolute; z-index: -1; inset: 0; box-sizing: border-box;
+  border: 5px solid var(--s3d-rim); border-radius: 999px; background: var(--s3d-disc);
+}
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+):hover:not(:disabled):not(.is-busy) {
+  background: transparent; color: var(--s3d-ink); border: 0; transform: translateY(-2px); --s3d-lift: 2px;
+}
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+):active:not(:disabled):not(.is-busy) { transform: translateY(4px); --s3d-lift: -4px; transition-duration: .05s; }
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+):is(:focus-visible, :focus-within) { outline: 3px solid var(--s3d-focus); outline-offset: 5px; }
+.fx-page.scene-lab-page :is(
+  .scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download,
+  .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button, .scene-capture-retry
+):is(:disabled, .is-busy) { opacity: .7; cursor: default; }
+.fx-page.scene-lab-page .scene-lab-upload.is-busy { cursor: progress; }
+.fx-page.scene-lab-page :is(.scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-secondary, .scene-lab-prompt button):disabled::before,
+.fx-page.scene-lab-page .scene-lab-upload.is-busy::before { filter: saturate(.6); }
+/* Primary text: dark ink on the terracotta face (contrast >= 4.5:1). */
+.fx-page.scene-lab-page :is(.is-camera, .scene-lab-prompt button),
+.fx-page.scene-lab-page :is(.is-camera, .scene-lab-prompt button):hover:not(:disabled) { color: #2a1812; }
+
+/* Layout around the buttons */
+.fx-page.scene-lab-page .scene-lab-upload-actions { gap: 10px 14px; padding-bottom: 2px; }
+.fx-page.scene-lab-page .scene-splat-orientation { gap: 8px 14px; padding: 12px 16px 8px; }
+.fx-page.scene-lab-page .scene-splat-orientation button { font-size: 13px; padding: 0 16px; }
+.fx-page.scene-lab-page .scene-lab-secondary { width: calc(100% - 40px); margin: 4px 20px 18px; }
+.fx-page.scene-lab-page .scene-lab-prompt button { width: 100%; margin-top: 14px; min-height: 52px; font-size: 15px; }
+.fx-page.scene-lab-page .scene-capture-retry { margin-top: 12px; }
+
+/* ---- planning panel + generate section as raised pedestals ---- */
+/* the viewer card joins the pedestal family so all three panels read as one set */
+.fx-page.scene-lab-page :is(.scene-lab-viewer-card, .scene-lab-controls, .scene-lab-generate) {
+  border: 9px solid var(--s3d-rim); border-radius: 32px; background: var(--s3d-disc);
+  color: var(--s3d-ink); margin-bottom: 86px;
+  box-shadow:
+    0 8px 0 0 #b8a286, 0 0 0 2px var(--s3d-ink), 0 8px 0 2px var(--s3d-ink),
+    12px 16px 8px rgba(29, 31, 51, .22);
+}
+.fx-page.scene-lab-page :is(.scene-lab-viewer-card, .scene-lab-controls) { align-self: start; }
+.fx-page.scene-lab-page .scene-lab-viewer-card :is(.scene-lab-card-head, .scene-splat-orientation) { border-bottom: 2px solid color-mix(in srgb, var(--s3d-ink) 14%, transparent); }
+.fx-page.scene-lab-page .scene-lab-viewer-card .scene-lab-card-head strong { font-weight: 700; }
+.fx-page.scene-lab-page .scene-lab-viewer-foot { border-top: 2px solid color-mix(in srgb, var(--s3d-ink) 14%, transparent); color: var(--s3d-ink); }
+.fx-page.scene-lab-page .scene-lab-controls .scene-lab-card-head { border-bottom: 2px solid color-mix(in srgb, var(--s3d-ink) 14%, transparent); }
+.fx-page.scene-lab-page .scene-lab-controls .scene-lab-card-head strong { font-weight: 700; }
+.fx-page.scene-lab-page .scene-lab-controls .scene-plan-svg { border-bottom: 2px solid color-mix(in srgb, var(--s3d-ink) 14%, transparent); background: var(--s3d-well); }
+.fx-page.scene-lab-page .scene-lab-controls :is(.scene-lab-card-head span, .scene-lab-fields label, .scene-capture-backend span, .scene-capture-backend small),
+.fx-page.scene-lab-page .scene-lab-generate p { color: color-mix(in srgb, var(--s3d-ink) 78%, transparent); }
+.fx-page.scene-lab-page .scene-lab-fields label { font-size: 10px; font-weight: 600; }
+.fx-page.scene-lab-page :is(.scene-lab-fields input, .scene-lab-prompt textarea) {
+  min-height: 44px; border: 2px solid color-mix(in srgb, var(--s3d-ink) 16%, transparent);
+  border-radius: 999px; background: var(--s3d-well); color: var(--s3d-ink); font-family: var(--s3d-font); font-size: 14px; outline: none;
+}
+.fx-page.scene-lab-page .scene-lab-prompt textarea { border-radius: 22px; min-height: 96px; padding: 14px 18px; }
+.fx-page.scene-lab-page :is(.scene-lab-fields input, .scene-lab-prompt textarea):focus-visible {
+  border-color: var(--s3d-ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--s3d-focus) 55%, transparent);
+}
+.fx-page.scene-lab-page .scene-lab-prompt label { font-weight: 700; color: var(--s3d-ink); }
+.fx-page.scene-lab-page .scene-capture-backend { border: 2px solid color-mix(in srgb, var(--s3d-ink) 14%, transparent); border-radius: 22px; background: var(--s3d-well); }
+.fx-page.scene-lab-page .scene-capture-backend strong { color: var(--s3d-ink); }
+.fx-page.scene-lab-page .scene-lab-controls .scene-lab-fields { padding: 16px 20px; }
+
+@media (max-width: 650px) {
+  .fx-page.scene-lab-page :is(.scene-lab-viewer-card, .scene-lab-controls, .scene-lab-generate) { border-width: 7px; border-radius: 26px; margin-bottom: 64px; }
+  .fx-page.scene-lab-page .scene-lab-upload-actions > *, .fx-page.scene-lab-page .scene-lab-upload { flex: 1 1 42%; }
+  .fx-page.scene-lab-page .scene-splat-orientation button { flex: 1 1 40%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-page.scene-lab-page *, .fx-page.scene-lab-page *::before { transition: none !important; }
+  .fx-page.scene-lab-page :is(.scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download, .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button):is(:hover, :active) { transform: none; }
+}

@@ -49,9 +49,16 @@ class SceneCaptureTests(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertEqual(out.stat().st_size, 64)
         raw = out.read_bytes()
+        # Records are sorted most visible first (volume × opacity): row 2 (volume 24) leads.
         first = np.frombuffer(raw[:24], dtype="<f4")
-        np.testing.assert_allclose(first[:3], [0, 2, -1], atol=1e-6)
-        np.testing.assert_allclose(first[3:6], [1, 1, 1], atol=1e-6)
+        second = np.frombuffer(raw[32:56], dtype="<f4")
+        np.testing.assert_allclose(first[:3], [3, 5, -4], atol=1e-6)
+        np.testing.assert_allclose(first[3:6], [2, 3, 4], atol=1e-5)
+        np.testing.assert_allclose(second[:3], [0, 2, -1], atol=1e-6)
+        np.testing.assert_allclose(second[3:6], [1, 1, 1], atol=1e-6)
+        # Identity orientation is rotated with the Z-up -> Y-up swap: q_x(-90°) = (√½, -√½, 0, 0).
+        rot = np.frombuffer(raw[60:64], dtype=np.uint8).astype(float)
+        np.testing.assert_allclose((rot - 128) / 128, [np.sqrt(.5), -np.sqrt(.5), 0, 0], atol=1 / 128)
 
 
 if __name__ == "__main__":

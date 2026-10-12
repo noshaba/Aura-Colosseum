@@ -23,7 +23,6 @@ export function SiteFooter({ onPage, onWallet, world = true }: Props) {
               <button className="fx-link" onClick={() => go('scene')}>Scene lab</button>
               <button className="fx-link" onClick={() => go('model')}>Aura model</button>
               <button className="fx-link" onClick={() => go('curation')}>Curation market</button>
-              <button className="fx-link" onClick={() => go('methodology')}>Methodology</button>
             </div>
             <div className="fx-footer__col">
               <span className="fx-footer__label">Modes</span>
@@ -35,7 +34,6 @@ export function SiteFooter({ onPage, onWallet, world = true }: Props) {
               <span className="fx-footer__item">Solana devnet</span>
               <button className="fx-link" onClick={onWallet}>Connect wallet</button>
             </div>
-            <button className="fx-footer__contact fx-underline" onClick={() => go('methodology')}>Read the methods</button>
           </div>
         </div>
         <div className="fx-footer__legal">
