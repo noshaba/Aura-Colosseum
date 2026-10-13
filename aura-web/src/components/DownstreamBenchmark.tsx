@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { commitDownstreamBenchmarkOnChain, connectWallet, detectedWallets, explorerTransactionUrl } from '../solana'
-import type { DownstreamBenchmarkReceipt, WalletConnection } from '../solana'
+import { useWallet } from '../wallet/WalletContext'
+import { commitDownstreamBenchmarkOnChain, explorerTransactionUrl } from '../solana'
+import type { DownstreamBenchmarkReceipt } from '../solana'
 
 type SelectorName = 'reward_transformer'|'logistic'
 type SelectorStatus = { label:string;trained:boolean;version:string|null;unseen_count:number }
@@ -40,7 +41,7 @@ const METRICS:[keyof BenchmarkResult['aura_result'],string][]=[
 export function DownstreamBenchmark(){
   const [cohorts,setCohorts]=useState<Cohort[]>([]);const [cohort,setCohort]=useState('');const [selectorName,setSelectorName]=useState<SelectorName>('reward_transformer')
   const [result,setResult]=useState<BenchmarkResult|null>(null);const [busy,setBusy]=useState(false)
-  const [error,setError]=useState('');const [notice,setNotice]=useState('');const [wallet,setWallet]=useState<WalletConnection|null>(null)
+  const [error,setError]=useState('');const [notice,setNotice]=useState('');const {ensureWallet}=useWallet()
   const [receipts,setReceipts]=useState<DownstreamBenchmarkReceipt[]>(()=>{try{return JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{return []}})
   const refresh=useCallback(async()=>{
     try{
@@ -58,7 +59,7 @@ export function DownstreamBenchmark(){
     }catch(e){setError(e instanceof Error?e.message:'Benchmark failed')}finally{setBusy(false)}
   }
   const anchor=async()=>{if(!result)return;setBusy(true);setError('');setNotice('')
-    try{let signer=wallet;if(!signer){const found=detectedWallets().find(x=>x.installed);if(!found)throw new Error('Install Phantom or Solflare and fund a devnet wallet.');signer=await connectWallet(found.kind);setWallet(signer)}
+    try{const signer=await ensureWallet()
       const receipt=await commitDownstreamBenchmarkOnChain(signer,result.report_sha256,result.version);const next=[...receipts,receipt];setReceipts(next);localStorage.setItem(STORAGE,JSON.stringify(next));setNotice('Experiment report hash anchored on Solana devnet. This records provenance, not physical validity.')
     }catch(e){setError(e instanceof Error?e.message:'Could not anchor benchmark')}finally{setBusy(false)}}
   return <section className="benchmark-section" aria-label="Downstream imitation benchmark">

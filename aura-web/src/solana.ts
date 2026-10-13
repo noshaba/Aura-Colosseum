@@ -8,7 +8,10 @@ export type SolanaWalletProvider = {
   disconnect?(): Promise<void>
   signTransaction?(transaction: any): Promise<any>
   signAndSendTransaction?(transaction: any, options?: Record<string, unknown>): Promise<{ signature?: string } | string>
-  signMessage?(message: Uint8Array, display?: 'utf8' | 'hex'): Promise<{ signature: Uint8Array } | Uint8Array>
+  signMessage?(message: Uint8Array, display?: 'utf8' | 'hex'): Promise<{ signature: Uint8Array; publicKey?: { toString(): string } } | Uint8Array>
+  on?(event: string, handler: (...args: any[]) => void): void
+  off?(event: string, handler: (...args: any[]) => void): void
+  removeListener?(event: string, handler: (...args: any[]) => void): void
 }
 export type WalletConnection = { kind: WalletKind; label: string; address: string; provider: SolanaWalletProvider }
 
@@ -29,14 +32,20 @@ export async function connectWallet(kind:WalletKind):Promise<WalletConnection>{c
  *  base64 ed25519 signature the server verifies. Costs nothing: no transaction is sent. */
 export async function signAuraChallenge(wallet:WalletConnection,message:string):Promise<string>{
   if(!wallet.provider.signMessage)throw new Error(`${wallet.label} does not support message signing, which Aura needs to prove you own this wallet.`)
-  const result=await wallet.provider.signMessage(new TextEncoder().encode(message),'utf8')
-  const signature=result instanceof Uint8Array?result:result.signature
-  let binary='';signature.forEach(b=>{binary+=String.fromCharCode(b)});return btoa(binary)
+  const result:any=await wallet.provider.signMessage(new TextEncoder().encode(message),'utf8')
+  const signer=result?.publicKey?.toString?.()
+  if(signer&&signer!==wallet.address)throw new Error('Wallet account changed — reconnect')
+  const sig=result?.signature??result
+  let bytes:Uint8Array
+  try{bytes=Uint8Array.from(sig as ArrayLike<number>)}catch{throw new Error('Wallet returned an unreadable signature')}
+  if(bytes.length!==64)throw new Error(`Wallet returned a ${bytes.length}-byte signature; expected 64 (ed25519)`)
+  let binary='';bytes.forEach(b=>{binary+=String.fromCharCode(b)});return btoa(binary)
 }
 export async function disconnectWallet(wallet:WalletConnection|null){await wallet?.provider.disconnect?.()}
 function connection(){return new Connection(DEVNET_RPC,'confirmed')}
 export async function getDevnetBalance(address:string){return await connection().getBalance(new PublicKey(address),'confirmed')/LAMPORTS_PER_SOL}
-export async function requestDevnetSol(address:string){const rpc=connection();const signature=await rpc.requestAirdrop(new PublicKey(address),Math.round(.05*LAMPORTS_PER_SOL));const latest=await rpc.getLatestBlockhash('confirmed');await rpc.confirmTransaction({signature,...latest},'confirmed');return signature}
+export const FAUCET_URL='https://faucet.solana.com'
+export async function requestDevnetSol(address:string){try{const rpc=connection();const signature=await rpc.requestAirdrop(new PublicKey(address),Math.round(.05*LAMPORTS_PER_SOL));const latest=await rpc.getLatestBlockhash('confirmed');await rpc.confirmTransaction({signature,...latest},'confirmed');return signature}catch(e){throw new Error(`Public devnet faucet is rate-limited or down (${e instanceof Error?e.message:'unknown error'}) — use ${FAUCET_URL}`)}}
 export function explorerTransactionUrl(signature:string){return `https://explorer.solana.com/tx/${signature}?cluster=devnet`}
 export function explorerAddressUrl(address:string){return `https://explorer.solana.com/address/${address}?cluster=devnet`}
 export function shortAddress(address:string){return address.length>12?`${address.slice(0,5)}…${address.slice(-4)}`:address}

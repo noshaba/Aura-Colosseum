@@ -1,0 +1,27 @@
+/* Character switch group in the header (Header.tsx); the wallet lives in the burger panel.
+   The group takes the switch's old grid slot; the switch inside it loses its own offset. */
+.fx-nav__inner > .fx-nav__tools { grid-row: 1; grid-column: 3; justify-self: end; margin-right: 72px; display: flex; align-items: center; gap: 8px; pointer-events: auto; }
+.fx-nav__tools > .char-switch { margin-right: 0; grid-column: auto; }
+@media (max-width: 767px) { .fx-nav__inner > .fx-nav__tools { margin-right: 64px; } }
+@media (max-width: 640px) {
+  .fx-nav__inner > .fx-nav__tools { grid-column: 1; justify-self: start; margin-right: 0; gap: 4px; }
+}
+/* Phones: the switch is a 44x44 button and the wordmark is sized
+   down so it never reaches the logo (left column = (viewport - 32 - logo) / 2 >= 100px). */
+@media (max-width: 480px) {
+  .fx-nav__inner > .fx-nav__tools { gap: 8px; }
+  .fx-nav__tools > .char-switch .char-switch__btn { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 6px 22px 22px 6px; }
+  .fx-nav .fx-nav__logo { width: 156px; height: 36px; }
+  .fx-nav .fx-nav__logo img { height: 36px; }
+  .fx-nav.is-scrolled .fx-nav__logo { width: 36px; }
+}
+/* Very narrow phones: fairy mark only. */
+@media (max-width: 360px) {
+  .fx-nav .fx-nav__logo { width: 46px; height: 48px; }
+  .fx-nav .fx-nav__logo img { height: 48px; }
+}
+/* Wallet modal provider rows: the "not installed" rows are anchors, so give them the same
+   box as the buttons (flex column, padding clear of the rounded end, no underline). */
+.wallet-modal a.connect-browser.wallet-provider { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 10px 24px; text-decoration: none; box-sizing: border-box; }
+.wallet-modal .wallet-provider { padding-left: 24px; padding-right: 24px; text-align: left; }
+.wallet-modal a.connect-browser.wallet-provider small { text-decoration: none; }

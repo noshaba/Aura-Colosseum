@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useWallet } from '../wallet/WalletContext'
 import {
   commitCurationBountyOnChain,
-  connectWallet,
-  detectedWallets,
   explorerTransactionUrl,
   payCurationOnChain,
   shortAddress,
   signAuraChallenge,
 } from '../solana'
-import type { WalletConnection } from '../solana'
 import { GeneratedMotionPreview } from './GeneratedMotionPreview'
 import './curation-3d.css'
 
@@ -34,7 +32,7 @@ const sol=(lamports:number)=>lamports/1_000_000_000
 
 export function CurationMarket(){
   const [motions,setMotions]=useState<Motion[]>([]);const [bounties,setBounties]=useState<Bounty[]>([]);const [curations,setCurations]=useState<Curation[]>([])
-  const [wallet,setWallet]=useState<WalletConnection|null>(null);const [selected,setSelected]=useState('');const [left,setLeft]=useState('');const [right,setRight]=useState('')
+  const {wallet,ensureWallet,openModal}=useWallet();const [selected,setSelected]=useState('');const [left,setLeft]=useState('');const [right,setRight]=useState('')
   const [title,setTitle]=useState('G1 forward-walk curation');const [prompt,setPrompt]=useState('A humanoid robot walks forward for several steps while maintaining balance and comes to a controlled stop.')
   const [criterion,setCriterion]=useState('Prefer controlled forward progress, minimal foot sliding, and a clean stop.');const [rewardSol,setRewardSol]=useState('0.002');const [target,setTarget]=useState('10')
   const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('')
@@ -55,7 +53,7 @@ export function CurationMarket(){
   useEffect(()=>{if(!selected){setCurations([]);return}void api<{curations:Curation[]}>(`/bounties/curations?bounty_id=${encodeURIComponent(selected)}`).then(x=>setCurations(x.curations)).catch(()=>{})},[selected])
 
   const active=useMemo(()=>bounties.find(x=>x.id===selected)||null,[bounties,selected]);const a=motions.find(x=>x.id===left);const b=motions.find(x=>x.id===right)
-  const connect=async()=>{let w=wallet;if(w)return w;const found=detectedWallets().find(x=>x.installed);if(!found)throw new Error('Install Phantom or Solflare to use devnet payouts.');w=await connectWallet(found.kind);setWallet(w);return w}
+  const connect=()=>ensureWallet()
   const create=async()=>{setBusy(true);setError('');setNotice('');try{
     const w=await connect();const reward=Math.round(Number(rewardSol)*1_000_000_000);const targetN=Number(target)
     if(!Number.isFinite(reward)||reward<10_000)throw new Error('Reward must be at least 0.00001 SOL')
@@ -86,7 +84,7 @@ export function CurationMarket(){
     <div className="card-kicker">CURATION MARKET · SOLANA DEVNET</div><h2><span>Pay for judgment.</span> <em>Keep the evidence.</em></h2>
     <p className="curation-intro">Requesters publish a motion-curation task, humans compare G1 candidates, and accepted curations are paid in SOL. The payout transaction also carries the curation evidence hash, and Aura verifies the transaction server-side before marking work paid. <strong>This demo uses direct requester-approved payouts, not escrow.</strong></p>
     {error&&<div className="generated-library-warning" role="alert">{error}</div>}{notice&&<p className="curation-notice" role="status">{notice}</p>}
-    <div className="curation-wallet"><span>{wallet?`Wallet ${shortAddress(wallet.address)}`:'No wallet connected'}</span><button disabled={busy} onClick={()=>void connect().catch(e=>setError(e.message))}>{wallet?'Wallet connected':'Connect Phantom / Solflare'}</button></div>
+    <div className="curation-wallet"><span>{wallet?`Wallet ${shortAddress(wallet.address)}`:'No wallet connected'}</span><button disabled={busy} onClick={openModal}>{wallet?'Wallet connected':'Connect Phantom / Solflare'}</button></div>
     <div className="curation-create">
       <div><label>BOUNTY TITLE</label><input value={title} maxLength={80} onChange={e=>setTitle(e.target.value)}/><label>EXACT GENERATION PROMPT</label><textarea value={prompt} maxLength={480} onChange={e=>setPrompt(e.target.value)}/><label>HUMAN CURATION CRITERION</label><textarea value={criterion} maxLength={240} onChange={e=>setCriterion(e.target.value)}/></div>
       <div><label>REWARD / ACCEPTED COMPARISON · SOL</label><input type="number" min="0.00001" step="0.001" value={rewardSol} onChange={e=>setRewardSol(e.target.value)}/><label>TARGET COMPARISONS</label><input type="number" min="1" max="1000" value={target} onChange={e=>setTarget(e.target.value)}/><p>Maximum planned direct payout: <strong>{(Number(rewardSol||0)*Number(target||0)).toFixed(4)} SOL</strong>. Aura does not custody or escrow these funds in this version.</p><button disabled={busy||!title.trim()||!prompt.trim()||!criterion.trim()} onClick={()=>void create()}>Create + publish bounty on devnet</button></div>

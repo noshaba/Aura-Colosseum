@@ -126,3 +126,20 @@
   .fx-page.scene-lab-page *, .fx-page.scene-lab-page *::before { transition: none !important; }
   .fx-page.scene-lab-page :is(.scene-lab-upload-actions > button, .scene-lab-upload, .scene-lab-download, .scene-splat-orientation button, .scene-lab-secondary, .scene-lab-prompt button):is(:hover, :active) { transform: none; }
 }
+
+/* Camera HUD buttons sit on a dark glass bar: same pedestal language (cream face, sandy rim,
+   ground shadow) with a light outline instead of the ink one. */
+.scene-camera-actions button {
+  min-height: 44px; padding: 0 20px; border: 2px solid rgba(244, 241, 222, .85); border-radius: 999px;
+  background: var(--s3d-well, #f4f1de); color: #3d405b; font: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+  box-shadow: 0 4px 0 0 #b8a286, 0 6px 8px rgba(0, 0, 0, .35);
+  transition: transform .14s ease-out, box-shadow .14s ease-out, background-color .2s;
+}
+.scene-camera-actions button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 0 0 #b8a286, 0 8px 10px rgba(0, 0, 0, .35); }
+.scene-camera-actions button:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 0 #b8a286, 0 2px 4px rgba(0, 0, 0, .35); transition-duration: .05s; }
+.scene-camera-actions button:focus-visible { outline: 3px solid var(--s3d-focus, #81b29a); outline-offset: 4px; }
+.scene-camera-actions button.is-primary { background: #e07a5f; border-color: #f4f1de; color: #fff; box-shadow: 0 4px 0 0 #a9553f, 0 6px 8px rgba(0, 0, 0, .35); }
+.scene-camera-actions button.is-stop { background: #c9654a; border-color: #f4f1de; color: #fff; box-shadow: 0 4px 0 0 #8f4634, 0 6px 8px rgba(0, 0, 0, .35); }
+.scene-camera-actions button:disabled { opacity: .5; box-shadow: none; }
+.scene-camera-actions { padding-bottom: 6px; }
+@media (prefers-reduced-motion: reduce) { .scene-camera-actions button { transition: none; } }

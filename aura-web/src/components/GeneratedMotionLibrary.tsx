@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
+import { useWallet } from '../wallet/WalletContext'
 import { GeneratedMotionPreview } from './GeneratedMotionPreview'
 import { GeneratedG1RobotPreview } from './GeneratedG1RobotPreview'
 import { AIST_REFERENCE_MOTIONS, STUDY_CLIP_SECONDS } from '../aistReferenceMotions'
 import { DEFAULT_VIEW_POSE, XBotScene } from './XBotScene'
 import type { ViewPose } from './XBotScene'
 import {
-  commitG1ScreenOnChain, connectWallet, detectedWallets, explorerTransactionUrl,
+  commitG1ScreenOnChain, explorerTransactionUrl,
 } from '../solana'
-import type { G1ScreenReceipt, WalletConnection, WalletKind } from '../solana'
+import type { G1ScreenReceipt } from '../solana'
 
 type Foot = { foot: string; contact_frame_fraction: number; contact_intervals: number; contact_horizontal_speed_m_s: number | null }
 type Report = {
@@ -52,7 +53,7 @@ export function GeneratedMotionLibrary() {
   const [error, setError] = useState('')
   const [chainError, setChainError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [wallet, setWallet] = useState<WalletConnection | null>(null)
+  const { ensureWallet } = useWallet()
   const [aistProgress, setAistProgress] = useState(0)
   const [aistView, setAistView] = useState<ViewPose>({ ...DEFAULT_VIEW_POSE })
   const [prior, setPrior] = useState<PriorState>({ model: null, scores: [] })
@@ -128,13 +129,7 @@ export function GeneratedMotionLibrary() {
     if (!current || !result) return
     setChainError(''); setBusy(true)
     try {
-      let signer = wallet
-      if (!signer) {
-        const available = detectedWallets().find(x => x.installed)
-        if (!available) throw new Error('Install Phantom or Solflare, enable devnet and fund the wallet with devnet SOL.')
-        signer = await connectWallet(available.kind as WalletKind)
-        setWallet(signer)
-      }
+      const signer = await ensureWallet()
       const receipt = await commitG1ScreenOnChain(signer, current.id, result.native_sha256, result.report_sha256, result.report.method)
       const next = [...receipts, receipt]
       setReceipts(next); localStorage.setItem(CHAIN_STORAGE, JSON.stringify(next))

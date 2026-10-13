@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { detectedWallets, explorerAddressUrl, shortAddress } from '../solana'
 import type { WalletConnection, WalletKind } from '../solana'
 
@@ -15,7 +15,16 @@ type Props = {
 }
 
 export function WalletModal({ wallet, balance, busy, error, onConnect, onDisconnect, onAirdrop, onRefresh, onClose }: Props) {
-  const wallets = useMemo(detectedWallets, [])
+  const [wallets, setWallets] = useState(detectedWallets)
+  // Extensions can inject after page load: re-detect on open, on focus and briefly while open.
+  useEffect(() => {
+    const scan = () => setWallets(detectedWallets())
+    scan()
+    window.addEventListener('focus', scan)
+    const t = window.setInterval(scan, 1500)
+    return () => { window.removeEventListener('focus', scan); window.clearInterval(t) }
+  }, [])
+  const INSTALL: Record<WalletKind, string> = { phantom: 'https://phantom.app/download', solflare: 'https://solflare.com/download' }
   const [localMessage, setLocalMessage] = useState('')
 
   const run = async (action: () => Promise<void>, success = '') => {
@@ -54,23 +63,28 @@ export function WalletModal({ wallet, balance, busy, error, onConnect, onDisconn
           <>
             <p>Connect a browser wallet to sign an on-chain receipt for your human motion evaluations. Transactions are sent to Solana devnet only.</p>
             <div className="wallet-provider-list">
-              {wallets.map((candidate) => (
+              {wallets.map((candidate) => candidate.installed ? (
                 <button
                   key={candidate.kind}
                   className="connect-browser wallet-provider"
-                  disabled={busy || !candidate.installed}
+                  disabled={busy}
                   onClick={() => run(() => onConnect(candidate.kind), `${candidate.label} connected.`)}
                 >
                   <span>{candidate.label}</span>
-                  <small>{candidate.installed ? 'Detected' : 'Not installed'}</small>
+                  <small>Detected</small>
                 </button>
+              ) : (
+                <a key={candidate.kind} className="connect-browser wallet-provider" href={INSTALL[candidate.kind]} target="_blank" rel="noreferrer">
+                  <span>{candidate.label}</span>
+                  <small>Not installed · Install ↗</small>
+                </a>
               ))}
             </div>
             <div className="wallet-install-note">Phantom or Solflare browser extension required for signing. A pasted address cannot sign an on-chain contribution.</div>
           </>
         )}
 
-        {(error || localMessage) && <div className={error ? 'wallet-message error' : 'wallet-message'}>{error || localMessage}</div>}
+        {(error || localMessage) && <div className={error ? 'wallet-message error' : 'wallet-message'} role={error ? 'alert' : 'status'}>{error || localMessage}{error.includes('faucet.solana.com') && <> <a href="https://faucet.solana.com" target="_blank" rel="noreferrer">Open faucet ↗</a></>}</div>}
         <small>Devnet SOL has no monetary value. The site never asks for a seed phrase or private key.</small>
       </div>
     </div>
