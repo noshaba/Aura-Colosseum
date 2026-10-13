@@ -74,4 +74,40 @@ class BountyTests(unittest.TestCase):
         closed=close_bounty(self.conn,signed(self.conn,REQUESTER,'close',{'bounty_id':b['id'],'requester_wallet':WALLET_A}))
         self.assertEqual(closed['status'],'closed')
 
+    # A curate challenge is refused up front when curate() would refuse the vote anyway,
+    # so the wallet is never asked to sign a vote that can't be accepted.
+    def _curate_challenge(self,b,wallet):
+        return create_wallet_challenge(self.conn,{**self.vote(b,wallet),'action':'curate'})
+    def _challenge_count(self):
+        return self.conn.execute('SELECT COUNT(*) FROM wallet_challenges').fetchone()[0]
+    def test_curate_challenge_requires_posted_bounty(self):
+        b=create_bounty(self.conn,{'title':'Walk curation','prompt':'Walk forward','criterion':'Prefer controlled forward walking','requester_wallet':WALLET_A,'reward_lamports':1000000,'target_curations':5})
+        with self.assertRaisesRegex(ValueError,'Publish the bounty terms on Solana devnet'):
+            self._curate_challenge(b,CURATOR)
+        self.assertEqual(self._challenge_count(),0)
+    def test_curate_challenge_rejects_self_curation(self):
+        b=self._posted_bounty()
+        with self.assertRaisesRegex(ValueError,'requester cannot curate their own bounty'):
+            self._curate_challenge(b,REQUESTER)
+        self.assertEqual(self._challenge_count(),0)
+    def test_curate_challenge_rejects_closed_bounty(self):
+        b=self._posted_bounty()
+        close_bounty(self.conn,signed(self.conn,REQUESTER,'close',{'bounty_id':b['id'],'requester_wallet':WALLET_A}))
+        before=self._challenge_count()
+        with self.assertRaisesRegex(ValueError,'Bounty is not open'):
+            self._curate_challenge(b,CURATOR)
+        self.assertEqual(self._challenge_count(),before)
+    def test_curate_challenge_rejects_full_bounty(self):
+        b=self._posted_bounty(target=1)
+        curate(self.conn,self.base,signed(self.conn,CURATOR,'curate',self.vote(b,CURATOR)))
+        before=self._challenge_count()
+        with self.assertRaisesRegex(ValueError,'already reached its target'):
+            self._curate_challenge(b,STRANGER)
+        self.assertEqual(self._challenge_count(),before)
+    def test_curate_challenge_issued_for_open_posted_bounty(self):
+        b=self._posted_bounty()
+        ch=self._curate_challenge(b,CURATOR)
+        self.assertEqual(len(ch['nonce']),32);self.assertIn(f"Wallet: {WALLET_B}",ch['message']);self.assertGreater(ch['expires_at'],0)
+        self.assertEqual(self._challenge_count(),1)
+
 if __name__=='__main__':unittest.main()

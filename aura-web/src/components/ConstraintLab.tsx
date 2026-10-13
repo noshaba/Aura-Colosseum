@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { commitConstraintReportOnChain, connectWallet, detectedWallets, explorerTransactionUrl } from '../solana'
-import type { ConstraintReportReceipt, WalletConnection } from '../solana'
+import { useWallet } from '../wallet/WalletContext'
+import { commitConstraintReportOnChain, explorerTransactionUrl } from '../solana'
+import type { ConstraintReportReceipt } from '../solana'
 
 type Motion={id:string;name:string;model:string;preview_file?:string|null}
 type Constraints=Record<string,number>
@@ -28,14 +29,14 @@ export function ConstraintLab(){
   const [motions,setMotions]=useState<Motion[]>([]);const [presets,setPresets]=useState<Preset[]>([])
   const [preset,setPreset]=useState('balanced_forward_walk');const [constraints,setConstraints]=useState<Constraints>({})
   const [cohort,setCohort]=useState('');const [report,setReport]=useState<Report|null>(null);const [busy,setBusy]=useState(false)
-  const [error,setError]=useState('');const [notice,setNotice]=useState('');const [wallet,setWallet]=useState<WalletConnection|null>(null)
+  const [error,setError]=useState('');const [notice,setNotice]=useState('');const {ensureWallet}=useWallet()
   const [receipts,setReceipts]=useState<ConstraintReportReceipt[]>(()=>{try{return JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{return []}})
   const cohorts=useMemo(()=>{const m=new Map<string,Motion[]>();motions.filter(x=>x.model.toLowerCase().includes('g1')).forEach(x=>m.set(x.name,[...(m.get(x.name)||[]),x]));return [...m.entries()].filter(([,v])=>v.length>=2).sort((a,b)=>b[1].length-a[1].length)},[motions])
   useEffect(()=>{void (async()=>{try{const [m,p]=await Promise.all([api<Motion[]>('/motions'),api<{presets:Preset[]}>('/constraints/presets')]);setMotions(m);setPresets(p.presets);const chosen=p.presets.find(x=>x.id===preset)||p.presets[0];if(chosen)setConstraints({...chosen.constraints});const groups=new Map<string,number>();m.filter(x=>x.model.toLowerCase().includes('g1')).forEach(x=>groups.set(x.name,(groups.get(x.name)||0)+1));const first=[...groups].filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1])[0]?.[0]||'';setCohort(first)}catch(e){setError(e instanceof Error?e.message:'Constraint engine unavailable')}})()},[])
   const choosePreset=(id:string)=>{setPreset(id);const p=presets.find(x=>x.id===id);if(p)setConstraints({...p.constraints});setReport(null)}
   const selected=cohorts.find(([name])=>name===cohort)?.[1]||[]
   const run=async()=>{setBusy(true);setError('');setNotice('');try{const out=await api<Report>('/constraints/evaluate',{motion_ids:selected.map(x=>x.id),constraints});setReport(out);setNotice(`${out.all_pass_count} of ${out.candidate_count} candidates satisfy every selected constraint.`)}catch(e){setError(e instanceof Error?e.message:'Constraint evaluation failed')}finally{setBusy(false)}}
-  const anchor=async()=>{if(!report)return;setBusy(true);setError('');try{let signer=wallet;if(!signer){const found=detectedWallets().find(x=>x.installed);if(!found)throw new Error('Install Phantom or Solflare and fund a devnet wallet.');signer=await connectWallet(found.kind);setWallet(signer)}const receipt=await commitConstraintReportOnChain(signer,report.report_sha256,report.version);const next=[...receipts,receipt];setReceipts(next);localStorage.setItem(STORAGE,JSON.stringify(next));setNotice('Constraint-selection report hash anchored on devnet.')}catch(e){setError(e instanceof Error?e.message:'Could not anchor report')}finally{setBusy(false)}}
+  const anchor=async()=>{if(!report)return;setBusy(true);setError('');try{const signer=await ensureWallet();const receipt=await commitConstraintReportOnChain(signer,report.report_sha256,report.version);const next=[...receipts,receipt];setReceipts(next);localStorage.setItem(STORAGE,JSON.stringify(next));setNotice('Constraint-selection report hash anchored on devnet.')}catch(e){setError(e instanceof Error?e.message:'Could not anchor report')}finally{setBusy(false)}}
   const receipt=report?receipts.find(x=>x.reportSha256===report.report_sha256):undefined
   return <section className="constraint-section" aria-label="Aura native G1 constraint engine">
     <div className="constraint-head"><div><div className="card-kicker">NATIVE CONSTRAINT ENGINE</div><h2>Filter for the task. <em>Then learn the preference.</em></h2><p>Aura checks explicit kinematic requirements directly on NVIDIA Kimodo's saved G1 trajectories. Hard constraints come first; the human-learned preference signal only breaks ties between equally satisfying candidates.</p></div><div className="constraint-badge">NO BIOIK · NO AI4ANIMATION</div></div>

@@ -336,6 +336,17 @@ def create_wallet_challenge(conn: sqlite3.Connection, payload: dict[str, Any]) -
     bounty = get_bounty(conn, p["bounty_id"])
     if p["action"] == "close" and p["wallet"] != bounty["requester_wallet"]:
         raise ValueError("Only the bounty requester can close this bounty")
+    if p["action"] == "curate":
+        # Refuse up front what curate() would refuse, so the wallet is never asked to sign a
+        # vote that can't be accepted. curate() still re-checks all of this (and more) itself.
+        if bounty["status"] != "open":
+            raise ValueError("Bounty is not open")
+        if not bounty.get("posted_signature"):
+            raise ValueError("Publish the bounty terms on Solana devnet before accepting curations")
+        if p["wallet"] == bounty["requester_wallet"]:
+            raise ValueError("The bounty requester cannot curate their own bounty")
+        if int(bounty["curation_count"]) >= int(bounty["target_curations"]):
+            raise ValueError("This bounty has already reached its target number of curations")
     nonce = secrets.token_hex(16)
     created = _now()
     expires = created + CHALLENGE_TTL_S

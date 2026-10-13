@@ -4,6 +4,7 @@ import { useSmartNav } from '../hooks/useSmartNav'
 import { CharacterSwitch } from './CharacterSwitch'
 import type { Page } from '../types'
 import './nav-panel.css'
+import './wallet-pill.css'
 
 type Props = {
   page: Page
@@ -103,7 +104,9 @@ export function Header({ page, onPage, onWallet, walletAddress }: Props) {
           <img className="fx-nav__logo-alt" src={`${base}brand/aura-logo-horizontal.png`} alt="" aria-hidden="true" />
         </button>
         {/* Always visible; the only character control in the nav. */}
-        <CharacterSwitch />
+        <div className="fx-nav__tools">
+          <CharacterSwitch />
+        </div>
         <div className="fx-nav__side" ref={menu}>
           <button ref={burger} className="fx-nav__burger" aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open} aria-controls="fx-nav-panel" onClick={() => setOpen(v => !v)}>
             <span className="fx-nav__burger-line is-top" />

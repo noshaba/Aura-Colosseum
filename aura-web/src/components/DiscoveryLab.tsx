@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useWallet } from '../wallet/WalletContext'
 import { GeneratedMotionPreview } from './GeneratedMotionPreview'
-import { commitPreferenceOnChain, connectWallet, detectedWallets, explorerTransactionUrl } from '../solana'
-import type { PreferenceChainReceipt, WalletConnection } from '../solana'
+import { commitPreferenceOnChain, explorerTransactionUrl } from '../solana'
+import type { PreferenceChainReceipt } from '../solana'
 
 type Motion = { id:string;name:string;model:string;preview_file:string|null;kinematic_evaluation?:{native_sha256:string} }
 type Preference = {id:number;left_id:string;right_id:string;winner_id:string;context:string;left_hash:string;right_hash:string;created_at:number;evidence_sha256:string}
@@ -20,7 +21,7 @@ export function DiscoveryLab(){
   const [left,setLeft]=useState('');const [right,setRight]=useState('');const [context,setContext]=useState('G1 walking: prefer natural, stable-looking forward motion')
   const [votes,setVotes]=useState<Preference[]>([]);const [model,setModel]=useState<Model|null>(null);const [ranking,setRanking]=useState<Ranking[]>([])
   const [suggested,setSuggested]=useState<string[]>([]);const [error,setError]=useState('');const [notice,setNotice]=useState('')
-  const [busy,setBusy]=useState(false);const [wallet,setWallet]=useState<WalletConnection|null>(null)
+  const [busy,setBusy]=useState(false);const {ensureWallet}=useWallet()
   const [receipts,setReceipts]=useState<PreferenceChainReceipt[]>(()=>{try{return JSON.parse(localStorage.getItem(STORAGE)||'[]')}catch{return []}})
   const refresh=useCallback(async()=>{
     try{
@@ -45,7 +46,7 @@ export function DiscoveryLab(){
   }
   const train=async()=>{setBusy(true);setError('');try{await api('/train',{});setNotice('A real preference model was trained on your saved G1 comparisons.');await refresh()}catch(e){setError(e instanceof Error?e.message:'Training failed')}finally{setBusy(false)}}
   const anchor=async(v:Preference)=>{setBusy(true);setError('');try{
-    let signer=wallet;if(!signer){const found=detectedWallets().find(x=>x.installed);if(!found)throw new Error('Install Phantom or Solflare and fund a devnet wallet.');signer=await connectWallet(found.kind);setWallet(signer)}
+    const signer=await ensureWallet()
     const receipt=await commitPreferenceOnChain(signer,v.id,v.evidence_sha256)
     const next=[...receipts,receipt];setReceipts(next);localStorage.setItem(STORAGE,JSON.stringify(next));setNotice('Signed preference evidence recorded on devnet.')
   }catch(e){setError(e instanceof Error?e.message:'Could not anchor preference')}finally{setBusy(false)}}
