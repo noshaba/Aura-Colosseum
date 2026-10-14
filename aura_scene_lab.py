@@ -1,10 +1,9 @@
 """Scene-aware locomotion layer for Aura.
 
 This module intentionally keeps NVIDIA Kimodo as the motion generator.  It adds a
-small geometric scene proxy (floor bounds + axis-aligned obstacles), plans a
-collision-aware 2D root path, and bends the generated G1 root trajectory onto
-that path.  The visual Gaussian-splat scene remains a rendering asset; collision
-claims come only from this explicit geometry proxy.
+splat-derived occupancy map or explicit geometry proxy, plans a collision-aware
+2D root path, and bends the generated G1 root trajectory onto that path.
+Occupancy uses Aura bounds ordering: [xmin, xmax, zmin, zmax].
 """
 from __future__ import annotations
 
@@ -84,7 +83,31 @@ def normalize_scene(scene: dict[str, Any] | None) -> dict[str, Any]:
             "width": width,
             "depth": depth,
         })
+    occupancy = src.get("occupancy")
+    if occupancy is not None:
+        if not isinstance(occupancy, dict):
+            raise ValueError("scene.occupancy must be an object")
+        cell = _f(occupancy.get("cell_size"), "occupancy.cell_size")
+        if not 0.05 <= cell <= 0.5:
+            raise ValueError("occupancy.cell_size must be between 0.05 and 0.5")
+        if occupancy.get("bounds") != [xmin, xmax, zmin, zmax]:
+            raise ValueError("occupancy bounds must match scene bounds [xmin, xmax, zmin, zmax]")
+        nx, nz = math.ceil((xmax-xmin)/cell), math.ceil((zmax-zmin)/cell)
+        raw = occupancy.get("occupied")
+        if nx*nz > 250000 or not isinstance(raw, list) or len(raw) > 250000:
+            raise ValueError("occupancy exceeds 250,000 cells")
+        cells = set()
+        for pair in raw:
+            if (not isinstance(pair, (list, tuple)) or len(pair) != 2
+                    or any(type(v) is not int for v in pair)
+                    or not (0 <= pair[0] < nx and 0 <= pair[1] < nz)):
+                raise ValueError("invalid occupied cell index")
+            cells.add(tuple(pair))
+        occupancy = {"cell_size": cell, "bounds": [xmin, xmax, zmin, zmax],
+                     "floor_y": floor_y, "occupied": [list(p) for p in sorted(cells)]}
     return {
+        "occupancy": occupancy,
+        "safety_margin": max(0.0, min(0.5, _f(src.get("safety_margin", 0.08), "safety_margin"))),
         "name": str(src.get("name") or "Scene")[:100],
         "bounds": [xmin, xmax, zmin, zmax],
         "start": start,
@@ -96,14 +119,28 @@ def normalize_scene(scene: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _collision_boxes(a, b, scene):
+    r = scene["robot_radius"] + scene.get("safety_margin", 0.08)
+    for o in scene["obstacles"]:
+        yield (o["x"]-o["width"]/2-r, o["x"]+o["width"]/2+r,
+               o["z"]-o["depth"]/2-r, o["z"]+o["depth"]/2+r)
+    occ = scene.get("occupancy")
+    if occ:
+        cells = scene.get("_occupied")
+        if cells is None:
+            cells = {tuple(p) for p in occ["occupied"]}
+        c = occ["cell_size"]
+        xmin, xmax, zmin, zmax = occ["bounds"]
+        for ix in range(max(0, math.floor((min(a[0], b[0])-r-xmin-1e-9)/c)),
+                        min(math.ceil((xmax-xmin)/c)-1, math.floor((max(a[0], b[0])+r-xmin)/c))+1):
+            for iz in range(max(0, math.floor((min(a[1], b[1])-r-zmin-1e-9)/c)),
+                            min(math.ceil((zmax-zmin)/c)-1, math.floor((max(a[1], b[1])+r-zmin)/c))+1):
+                if (ix, iz) in cells:
+                    yield xmin+ix*c-r, xmin+(ix+1)*c+r, zmin+iz*c-r, zmin+(iz+1)*c+r
+
+
 def _point_blocked(x: float, z: float, scene: dict[str, Any]) -> bool:
-    r = scene["robot_radius"]
-    for obstacle in scene["obstacles"]:
-        hx = obstacle["width"] * 0.5 + r
-        hz = obstacle["depth"] * 0.5 + r
-        if abs(x - obstacle["x"]) <= hx and abs(z - obstacle["z"]) <= hz:
-            return True
-    return False
+    return not _segment_clear((x, z), (x, z), scene)
 
 
 def _grid(scene: dict[str, Any]):
@@ -124,13 +161,23 @@ def _grid(scene: dict[str, Any]):
 
 
 def _segment_clear(a: tuple[float, float], b: tuple[float, float], scene: dict[str, Any]) -> bool:
-    distance = math.hypot(b[0] - a[0], b[1] - a[1])
-    steps = max(1, int(math.ceil(distance / max(0.04, scene["grid_resolution"] * 0.45))))
-    for i in range(steps + 1):
-        t = i / steps
-        x = a[0] + (b[0] - a[0]) * t
-        z = a[1] + (b[1] - a[1]) * t
-        if _point_blocked(x, z, scene):
+    r = scene["robot_radius"] + scene.get("safety_margin", 0.08)
+    xmin, xmax, zmin, zmax = scene["bounds"]
+    if any(not (xmin+r <= p[0] <= xmax-r and zmin+r <= p[1] <= zmax-r) for p in (a, b)):
+        return False
+    # Exact slab intersection, including tangency, against inflated rectangles.
+    for box in _collision_boxes(a, b, scene):
+        lo, hi = 0.0, 1.0
+        for axis, lower, upper in ((0, box[0], box[1]), (1, box[2], box[3])):
+            delta = b[axis] - a[axis]
+            if abs(delta) < 1e-12:
+                if not lower <= a[axis] <= upper:
+                    lo, hi = 1.0, 0.0
+                    break
+            else:
+                t0, t1 = (lower-a[axis])/delta, (upper-a[axis])/delta
+                lo, hi = max(lo, min(t0, t1)), min(hi, max(t0, t1))
+        if lo <= hi:
             return False
     return True
 
@@ -151,7 +198,14 @@ def _simplify_path(path: list[tuple[float, float]], scene: dict[str, Any]) -> li
 
 def plan_path(scene_payload: dict[str, Any] | None) -> dict[str, Any]:
     scene = normalize_scene(scene_payload)
+    if scene.get("occupancy"):
+        scene["_occupied"] = {tuple(p) for p in scene["occupancy"]["occupied"]}
     nx, nz, to_idx, to_world = _grid(scene)
+    if nx * nz > 250000:
+        raise ValueError("Planning grid exceeds 250,000 cells")
+    for label in ("start", "goal"):
+        if not _segment_clear(tuple(scene[label]), to_world(to_idx(scene[label])), scene):
+            raise ValueError(f"scene {label} or its grid connection lacks clearance; move it to free space")
     start = to_idx(scene["start"])
     goal = to_idx(scene["goal"])
     if _point_blocked(*to_world(start), scene):
@@ -173,7 +227,7 @@ def plan_path(scene_payload: dict[str, Any] | None) -> dict[str, Any]:
             if not (0 <= nxt[0] < nx and 0 <= nxt[1] < nz):
                 continue
             wx, wz = to_world(nxt)
-            if _point_blocked(wx, wz, scene):
+            if not _segment_clear(to_world(current), (wx, wz), scene):
                 continue
             # Avoid diagonal corner cutting.
             if dx and dz:
@@ -195,17 +249,17 @@ def plan_path(scene_payload: dict[str, Any] | None) -> dict[str, Any]:
         cursor = came[cursor]
     cells.reverse()
     raw = [to_world(cell) for cell in cells]
-    raw[0] = tuple(scene["start"])
-    raw[-1] = tuple(scene["goal"])
+    raw = [tuple(scene["start"]), *raw, tuple(scene["goal"])]
     smooth = _simplify_path(raw, scene)
+    scene.pop("_occupied", None)
     distance = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(smooth, smooth[1:]))
     return {
-        "method": "aura-a-star-expanded-rectangles-v1",
+        "method": "aura-a-star-occupancy-v2",
         "scene": scene,
-        "path": [[round(x, 5), round(z, 5)] for x, z in smooth],
+        "path": [[x, z] for x, z in smooth],
         "path_length_m": round(distance, 5),
         "grid_cells": len(cells),
-        "note": "The Gaussian splat is visual context only. This path is planned against the explicit geometry proxy with the robot radius expanded into each obstacle.",
+        "note": "Path checked against scene occupancy and explicit obstacles, inflated by robot radius plus safety margin. Unobserved scan geometry is not guaranteed free.",
     }
 
 

@@ -198,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
             if path not in ('/preferences', '/train', '/prior/train', '/reward/train', '/benchmark', '/constraints/evaluate', '/generator/generate', '/scene/plan', '/scene/generate', '/bounties', '/bounties/post-signature', '/bounties/curate', '/bounties/pay', '/bounties/close', '/bounties/challenge'):
                 return self.send_error(404)
             size = int(self.headers.get('Content-Length', '0'))
-            if size > 16384 or size < 0: raise ValueError('Invalid request size')
+            if size > (8_000_000 if path in ('/scene/plan', '/scene/generate') else 16384) or size < 0: raise ValueError('Invalid request size')
             body = json.loads(self.rfile.read(size)) if size else {}
             if path == '/scene/plan':
                 out = plan_path(body.get('scene'))

@@ -31,3 +31,13 @@
 @media(max-width:650px){.scene-lab-download{flex:1 1 42%;justify-content:center}}
 /* Five actions: keep each label on one line and wrap whole buttons instead. */
 .scene-lab-upload-actions{flex-wrap:wrap;justify-content:flex-end}.scene-lab-upload-actions>*{white-space:nowrap}
+
+.scene-point-controls{padding:14px 16px;border-bottom:1px solid var(--fx-ink-10)}
+.scene-point-actions{display:flex;gap:8px;flex-wrap:wrap}
+.scene-point-actions button{min-height:40px;flex:1;padding:0 12px;border:1px solid var(--fx-ink-20);border-radius:999px;background:transparent;color:var(--fx-ink);font:inherit;font-size:12px;cursor:pointer}
+.scene-point-actions .scene-point-start[aria-pressed=true]{background:#7fa58d;border-color:#53745f;color:#101516}
+.scene-point-actions .scene-point-end[aria-pressed=true]{background:#c95f43;border-color:#943f2c;color:#fff}
+.scene-point-actions button:focus-visible{outline:2px solid var(--fx-ink);outline-offset:3px}
+.scene-point-controls p{margin:10px 0 0;font-size:12px;line-height:1.5;color:var(--fx-ink-64)}
+.scene-plan-svg.is-picking{cursor:crosshair}
+.scene-plan-svg text{pointer-events:none;user-select:none}

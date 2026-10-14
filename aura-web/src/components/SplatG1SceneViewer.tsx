@@ -6,6 +6,8 @@ import { createLightweightSplat } from '../three/lightweightSplat'
 
 type ScenePlan = { scene: { floor_y: number }; path: number[][] }
 type Props = {
+  splatOffset?: [number, number, number]
+  splatScale?: number
   previewFile?: string | null
   splatBuffer?: ArrayBuffer | null
   plan?: ScenePlan | null
@@ -19,7 +21,7 @@ type Props = {
 type RigPart = { mesh: THREE.Mesh; joint: number; geomPos: THREE.Vector3; geomQuat: THREE.Quaternion }
 const ZERO_SPLAT_ROTATION: [number, number, number] = [0, 0, 0]
 
-export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotation = ZERO_SPLAT_ROTATION, fitSplatToFloor = false }: Props) {
+export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotation = ZERO_SPLAT_ROTATION, fitSplatToFloor = false, splatOffset = ZERO_SPLAT_ROTATION, splatScale = 1 }: Props) {
   const mount = useRef<HTMLDivElement>(null)
   const splatHandle = useRef<ReturnType<typeof createLightweightSplat> | null>(null)
   const fitRef = useRef(fitSplatToFloor)
@@ -33,8 +35,9 @@ export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotati
     if (!splat) return
     splat.object.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
     if (fitSplatToFloor) splat.placeOnFloor(floorRef.current)
-    else splat.object.position.set(0, 0, 0)
-  }, [splatRotation, fitSplatToFloor])
+    else splat.object.position.set(...splatOffset)
+    splat.object.scale.setScalar(splatScale)
+  }, [splatRotation, fitSplatToFloor, splatOffset, splatScale])
 
   useEffect(() => {
     const el = mount.current
@@ -72,6 +75,8 @@ export function SplatG1SceneViewer({ previewFile, splatBuffer, plan, splatRotati
         splat = createLightweightSplat(splatBuffer)
         splat.object.rotation.set(splatRotation[0], splatRotation[1], splatRotation[2])
         if (fitRef.current) splat.placeOnFloor(floorRef.current)
+        if (!fitRef.current) splat.object.position.set(...splatOffset)
+        splat.object.scale.setScalar(splatScale)
         splatHandle.current = splat
         scene.add(splat.object)
         setStatus(`Gaussian-splat preview · ${splat.renderedSplats.toLocaleString()} / ${splat.totalSplats.toLocaleString()} splats`)

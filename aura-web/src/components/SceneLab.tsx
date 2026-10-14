@@ -3,10 +3,12 @@ import { GeneratedG1RobotPreview } from './GeneratedG1RobotPreview'
 import { SplatG1SceneViewer } from './SplatG1SceneViewer'
 import { SceneLabHeroSplat } from './SceneLabHeroSplat'
 import { convertGaussianPlyToSplat } from '../three/plyToSplat'
+import { deriveSplatOccupancy, type Occupancy } from '../three/splatOccupancy'
 import './scene-lab.css'
 import './scene-lab-3d.css'
 
 type Obstacle = { name: string; x: number; z: number; width: number; depth: number }
+type Endpoint = 'start' | 'goal'
 type SceneProxy = {
   name: string
   bounds: [number, number, number, number]
@@ -15,6 +17,8 @@ type SceneProxy = {
   floor_y: number
   robot_radius: number
   grid_resolution: number
+  occupancy?: Occupancy | null
+  safety_margin?: number
   obstacles: Obstacle[]
 }
 type Plan = {
@@ -80,14 +84,46 @@ function preferredRecorderMime() {
   return options.find(type => MediaRecorder.isTypeSupported(type)) || ''
 }
 
-function ScenePlanSvg({ scene, path }: { scene: SceneProxy; path?: number[][] }) {
+function endpointProblem(scene: SceneProxy, endpoint: Endpoint): string | null {
+  const [x, z] = scene[endpoint]
+  const [xmin, xmax, zmin, zmax] = scene.bounds
+  const clearance = Math.max(0.12, Math.min(0.8, scene.robot_radius)) + Math.max(0, Math.min(0.5, scene.safety_margin ?? 0.08))
+  const label = endpoint === 'start' ? 'Start' : 'End'
+  if (x < xmin + clearance || x > xmax - clearance || z < zmin + clearance || z > zmax - clearance) {
+    return `${label} is too close to or outside the map boundary. Choose a point farther inside.`
+  }
+  const blocked = scene.obstacles.some(o => Math.abs(x - o.x) <= o.width / 2 + clearance && Math.abs(z - o.z) <= o.depth / 2 + clearance)
+    || scene.occupancy?.occupied.some(([ix, iz]) => {
+      const c = scene.occupancy!.cell_size
+      return x >= xmin + ix * c - clearance && x <= xmin + (ix + 1) * c + clearance
+        && z >= zmin + iz * c - clearance && z <= zmin + (iz + 1) * c + clearance
+    })
+  return blocked ? `${label} is too close to an obstacle. Leave room for the robot and safety margin.` : null
+}
+
+function ScenePlanSvg({ scene, path, picking, onPick }: {
+  scene: SceneProxy; path?: number[][]; picking: Endpoint | null; onPick: (point: [number, number]) => void
+}) {
   const [xmin, xmax, zmin, zmax] = scene.bounds
   const w = xmax - xmin, h = zmax - zmin
   const toX = (x: number) => ((x - xmin) / w) * 100
   const toY = (z: number) => 100 - ((z - zmin) / h) * 100
   const polyline = path?.map(([x, z]) => `${toX(x)},${toY(z)}`).join(' ') || ''
-  return <svg className="scene-plan-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Top-down geometry proxy and planned path">
+  return <svg className={`scene-plan-svg${picking ? ' is-picking' : ''}`} viewBox="0 0 100 100" preserveAspectRatio="none"
+    aria-label="Top-down collision map with custom start and end points" aria-describedby="scene-point-help"
+    onClick={event => {
+      if (!picking) return
+      const rect = event.currentTarget.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      const u = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+      const v = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))
+      onPick([Number((xmin + u * w).toFixed(3)), Number((zmax - v * h).toFixed(3))])
+    }}>
     <rect x="0" y="0" width="100" height="100" className="scene-plan-floor" />
+    {scene.occupancy?.occupied.map(([ix, iz]) => {
+      const c = scene.occupancy!.cell_size
+      return <rect key={`${ix}:${iz}`} x={toX(xmin + ix * c)} y={toY(zmin + (iz + 1) * c)} width={c / w * 100} height={c / h * 100} className="scene-plan-obstacle" />
+    })}
     {scene.obstacles.map((obstacle, index) => {
       const x = toX(obstacle.x - obstacle.width / 2)
       const y = toY(obstacle.z + obstacle.depth / 2)
@@ -99,12 +135,20 @@ function ScenePlanSvg({ scene, path }: { scene: SceneProxy; path?: number[][] })
     <circle cx={toX(scene.start[0])} cy={toY(scene.start[1])} r="2.4" className="scene-plan-start" />
     <circle cx={toX(scene.goal[0])} cy={toY(scene.goal[1])} r="2.4" className="scene-plan-goal" />
     <text x={toX(scene.start[0]) + 3} y={toY(scene.start[1]) - 2}>start</text>
-    <text x={toX(scene.goal[0]) + 3} y={toY(scene.goal[1]) - 2}>goal</text>
+    <text x={toX(scene.goal[0]) + 3} y={toY(scene.goal[1]) - 2}>end</text>
   </svg>
 }
 
 export function SceneLab() {
   const [scene, setScene] = useState<SceneProxy>(DEFAULT_SCENE)
+  const [picking, setPicking] = useState<Endpoint | null>('start')
+  const endpointProblems = useMemo(() => (['start', 'goal'] as const)
+    .map(endpoint => endpointProblem(scene, endpoint)).filter((problem): problem is string => !!problem), [scene])
+  const setEndpoint = (endpoint: Endpoint, point: [number, number]) => {
+    setScene(current => ({ ...current, [endpoint]: point }))
+  }
+  const sceneRef = useRef(scene)
+  sceneRef.current = scene
   const [prompt, setPrompt] = useState('Walk from the start point to the goal and stop in a controlled stance.')
   const [plan, setPlan] = useState<Plan | null>(null)
   const [motions, setMotions] = useState<Motion[]>([])
@@ -114,6 +158,21 @@ export function SceneLab() {
   const [splatRotation, setSplatRotation] = useState<[number, number, number]>([0, 0, 0])
   // Loaded/converted files have arbitrary origins: auto-place them on the floor. Captures and the demo keep their own placement.
   const [splatFit, setSplatFit] = useState(false)
+  const [sceneScale, setSceneScale] = useState(1)
+  const [floorOverride, setFloorOverride] = useState<number | null>(null)
+  const derived = useMemo(() => {
+    if (!splatBuffer) return null
+    try { return { ...deriveSplatOccupancy(splatBuffer, splatRotation, splatFit, sceneScale, floorOverride), error: '' } }
+    catch (e) { return { occupancy: null, offset: [0, 0, 0] as [number, number, number], error: e instanceof Error ? e.message : 'Occupancy extraction failed' } }
+  }, [splatBuffer, splatRotation, splatFit, sceneScale, floorOverride])
+  useEffect(() => {
+    setPlan(null); setMotions([])
+    if (derived?.occupancy) {
+      const occupancy = derived.occupancy
+      setScene(s => ({ ...s, bounds: occupancy.bounds, floor_y: occupancy.floor_y, occupancy, obstacles: [] }))
+    }
+  }, [derived])
+  useEffect(() => { setPlan(null); setMotions([]); setMessage(''); setError('') }, [scene])
   // Object URL of the last .ply → .splat conversion, offered as a download.
   const [convertedSplat, setConvertedSplat] = useState<{ url: string; name: string } | null>(null)
   const [converting, setConverting] = useState(false)
@@ -330,6 +389,7 @@ export function SceneLab() {
   }
 
   const planOnly = async () => {
+    if (endpointProblems.length) return
     setBusy(true); setError(''); setMessage('Planning a collision-aware root path…')
     try {
       const response = await fetch('/aura-api/scene/plan', {
@@ -337,15 +397,15 @@ export function SceneLab() {
       })
       const data = await response.json() as Plan & { error?: string }
       if (!response.ok) throw new Error(data.error || `Scene planner returned ${response.status}`)
+      if (sceneRef.current !== scene) return
       setPlan(data)
-      setScene(data.scene)
       setMessage(`Path ready · ${data.path_length_m.toFixed(2)} m · ${data.grid_cells} grid cells`)
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not plan the scene'); setMessage('') }
+    } catch (e) { if (sceneRef.current === scene) { setError(e instanceof Error ? e.message : 'Could not plan the scene'); setMessage('') } }
     finally { setBusy(false) }
   }
 
   const generate = async () => {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || endpointProblems.length) return
     setBusy(true); setError(''); setMessage('NVIDIA Kimodo is generating two motions, then Aura is fitting their root paths to the scene…')
     try {
       const response = await fetch('/aura-api/scene/generate', {
@@ -354,15 +414,16 @@ export function SceneLab() {
       })
       const data = await response.json() as GenerationResponse
       if (!response.ok || !data.motions?.length || !data.plan) throw new Error(data.error || 'Scene generation did not return two fitted motions')
-      setPlan(data.plan); setScene(data.plan.scene); setMotions(data.motions); setSelected(0)
+      if (sceneRef.current !== scene) return
+      setPlan(data.plan); setMotions(data.motions); setSelected(0)
       setMessage(`2 scene-fitted candidates ready · ${data.plan.path_length_m.toFixed(2)} m planned route`)
       window.dispatchEvent(new CustomEvent('aura:motion-generated', { detail: { ids: data.motions.map(m => m.id) } }))
-    } catch (e) { setError(e instanceof Error ? e.message : 'Scene-aware generation failed'); setMessage('') }
+    } catch (e) { if (sceneRef.current === scene) { setError(e instanceof Error ? e.message : 'Scene-aware generation failed'); setMessage('') } }
     finally { setBusy(false) }
   }
 
   const status = useMemo(() => {
-    if (splatName) return `${splatName} · visual context only`
+    if (splatName) return `${splatName} · splat-derived occupancy`
     return 'Capture a room with the camera, load a .splat, or use the synthetic demo scene'
   }, [splatName])
 
@@ -371,7 +432,7 @@ export function SceneLab() {
       <SceneLabHeroSplat />
       <span className="card-kicker">SCENE LAB · CAMERA → GAUSSIAN SPLAT → G1</span>
       <h1>Capture a room.<br />Train inside it.</h1>
-      <p>Record a static environment with your camera. Aura can pass that video through a Gaussian-splat reconstruction backend, load the result directly into Scene Lab, plan against an explicit geometry proxy, and place Kimodo-generated G1 motion inside the captured environment.</p>
+      <p>Record a static environment with your camera. Aura can pass that video through a Gaussian-splat reconstruction backend, load the result directly into Scene Lab, derive a ground-plane occupancy map from the splat, plan around scanned objects, and place Kimodo-generated G1 motion inside the captured environment.</p>
     </section>
 
     <section className="scene-lab-grid">
@@ -445,7 +506,7 @@ export function SceneLab() {
               <button type="button" onClick={closeCamera} disabled={recording}>Cancel</button>
             </div>
           </div>
-        </div> : <SplatG1SceneViewer previewFile={previewUrl} splatBuffer={splatBuffer} plan={plan} splatRotation={splatRotation} fitSplatToFloor={splatFit} />}
+        </div> : <SplatG1SceneViewer previewFile={previewUrl} splatBuffer={splatBuffer} plan={plan} splatRotation={splatRotation} fitSplatToFloor={false} splatOffset={derived?.offset} splatScale={sceneScale} />}
 
         {capture && <div className={`scene-capture-progress is-${capture.status}`}>
           <div className="scene-capture-progress-head"><div><span>Camera reconstruction</span><strong>{capture.stage || capture.status}</strong></div><small>{capture.duration_s ? `${capture.duration_s.toFixed(1)}s scan · ` : ''}{formatBytes(capture.bytes)}</small></div>
@@ -454,30 +515,60 @@ export function SceneLab() {
           {(capture.status === 'uploaded' || capture.status === 'error') && (capture.backend?.available ?? captureRuntime?.backend.available) && <button type="button" className="scene-capture-retry" disabled={captureBusy} onClick={() => void beginReconstruction(capture.id)}>{captureBusy ? 'Starting…' : 'Reconstruct this capture'}</button>}
         </div>}
 
-        <div className="scene-lab-viewer-foot"><span>{status}</span><small>The splat is visual context. A normal phone video has no guaranteed metric scale, so robot clearance and path planning use the geometry proxy below—not splat opacity.</small></div>
+        <div className="scene-lab-viewer-foot"><span>{status}</span><small>Visible Gaussians produce the occupancy map below. Set metres per scene unit and verify floor height before planning; phone reconstructions have arbitrary scale.</small></div>
       </div>
 
       <aside className="scene-lab-controls">
-        <div className="scene-lab-card-head"><div><span>Planning proxy</span><strong>Floor + obstacle geometry</strong></div></div>
-        <ScenePlanSvg scene={scene} path={plan?.path} />
+        <div className="scene-lab-card-head"><div><span>Collision map</span><strong>{splatBuffer ? 'Splat-derived occupancy' : 'Manual geometry demo'}</strong></div></div>
+        <div className="scene-point-controls">
+          <div className="scene-point-actions" role="group" aria-label="Choose a route endpoint to place">
+            <button type="button" className="scene-point-start" aria-pressed={picking === 'start'} onClick={() => setPicking(picking === 'start' ? null : 'start')}>Set start</button>
+            <button type="button" className="scene-point-end" aria-pressed={picking === 'goal'} onClick={() => setPicking(picking === 'goal' ? null : 'goal')}>Set end</button>
+            <button type="button" onClick={() => setScene(s => ({ ...s, start: s.goal, goal: s.start }))}>Swap</button>
+          </div>
+          <p id="scene-point-help" aria-live="polite">{picking
+            ? `Click or tap the map to place the ${picking === 'start' ? 'start' : 'end'} point, or enter X/Z coordinates below.`
+            : 'Choose Set start or Set end to place a point, or enter X/Z coordinates below.'} Leave clearance around dark obstacles and map edges.</p>
+        </div>
+        <ScenePlanSvg scene={scene} path={plan?.path} picking={picking} onPick={point => {
+          if (!picking) return
+          setEndpoint(picking, point)
+          if (!endpointProblem({ ...scene, [picking]: point }, picking)) setPicking(picking === 'start' ? 'goal' : null)
+        }} />
+        {endpointProblems.length > 0 && <div className="scene-lab-error" role="status">{endpointProblems.map(problem => <p key={problem}>{problem}</p>)}</div>}
         <div className="scene-lab-fields compact">
-          <label>Start X<input value={scene.start[0]} type="number" step="0.1" onChange={e => setScene(s => ({ ...s, start: [n(e.target.value, s.start[0]), s.start[1]] }))} /></label>
-          <label>Start Z<input value={scene.start[1]} type="number" step="0.1" onChange={e => setScene(s => ({ ...s, start: [s.start[0], n(e.target.value, s.start[1])] }))} /></label>
-          <label>Goal X<input value={scene.goal[0]} type="number" step="0.1" onChange={e => setScene(s => ({ ...s, goal: [n(e.target.value, s.goal[0]), s.goal[1]] }))} /></label>
-          <label>Goal Z<input value={scene.goal[1]} type="number" step="0.1" onChange={e => setScene(s => ({ ...s, goal: [s.goal[0], n(e.target.value, s.goal[1])] }))} /></label>
-          <label>Obstacle X<input value={obstacle.x} type="number" step="0.1" onChange={e => updateObstacle({ x: n(e.target.value, obstacle.x) })} /></label>
+          <label>Start X (m)<input value={scene.start[0]} type="number" step="0.1" onChange={e => setEndpoint('start', [n(e.target.value, scene.start[0]), scene.start[1]])} /></label>
+          <label>Start Z (m)<input value={scene.start[1]} type="number" step="0.1" onChange={e => setEndpoint('start', [scene.start[0], n(e.target.value, scene.start[1])])} /></label>
+          <label>End X (m)<input value={scene.goal[0]} type="number" step="0.1" onChange={e => setEndpoint('goal', [n(e.target.value, scene.goal[0]), scene.goal[1]])} /></label>
+          <label>End Z (m)<input value={scene.goal[1]} type="number" step="0.1" onChange={e => setEndpoint('goal', [scene.goal[0], n(e.target.value, scene.goal[1])])} /></label>
+        </div>
+        {derived?.error && <p className="scene-lab-error">{derived.error}</p>}
+        {derived?.occupancy && <p>{derived.occupancy.occupied.length.toLocaleString()} occupied cells · 0.10 m grid</p>}
+        {derived?.occupancy && <button className="scene-lab-secondary" onClick={() => {
+          const url = URL.createObjectURL(new Blob([JSON.stringify(derived.occupancy)], { type: 'application/json' }))
+          const link = document.createElement('a'); link.href = url; link.download = 'occupancy.json'; link.click()
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        }}>Download occupancy.json</button>}
+        <div className="scene-lab-fields">
+          <label>Metres per scene unit<input type="number" min="0.001" step="0.1" value={sceneScale} onChange={e => setSceneScale(n(e.target.value, 1))} /></label>
+          <label>Floor Y (blank = estimate)<input type="number" step="0.05" value={floorOverride ?? ''} onChange={e => setFloorOverride(e.target.value === '' ? null : n(e.target.value, 0))} /></label>
+          <label>Robot radius<input type="number" step="0.01" min="0.12" max="0.8" value={scene.robot_radius} onChange={e => setScene(s => ({ ...s, robot_radius: n(e.target.value, s.robot_radius) }))} /></label>
+          <label>Safety margin<input type="number" step="0.01" min="0" max="0.5" value={scene.safety_margin ?? 0.08} onChange={e => setScene(s => ({ ...s, safety_margin: n(e.target.value, 0.08) }))} /></label>
+        </div>
+        <div className="scene-lab-fields compact">
+          {!splatBuffer && <><label>Obstacle X<input value={obstacle.x} type="number" step="0.1" onChange={e => updateObstacle({ x: n(e.target.value, obstacle.x) })} /></label>
           <label>Obstacle Z<input value={obstacle.z} type="number" step="0.1" onChange={e => updateObstacle({ z: n(e.target.value, obstacle.z) })} /></label>
           <label>Width<input value={obstacle.width} type="number" step="0.1" min="0.1" onChange={e => updateObstacle({ width: n(e.target.value, obstacle.width) })} /></label>
-          <label>Depth<input value={obstacle.depth} type="number" step="0.1" min="0.1" onChange={e => updateObstacle({ depth: n(e.target.value, obstacle.depth) })} /></label>
+          <label>Depth<input value={obstacle.depth} type="number" step="0.1" min="0.1" onChange={e => updateObstacle({ depth: n(e.target.value, obstacle.depth) })} /></label></>}
         </div>
-        <button className="scene-lab-secondary" disabled={busy} onClick={() => void planOnly()}>Plan route</button>
+        <button className="scene-lab-secondary" disabled={busy || !!derived?.error || endpointProblems.length > 0} onClick={() => void planOnly()}>Plan route</button>
         <div className="scene-capture-backend"><span>Camera → splat backend</span><strong>{captureRuntime?.backend.available ? 'Ready' : 'Setup required'}</strong><small>{captureRuntime?.backend.label || 'Checking local Aura API…'}{captureRuntime?.backend.detail ? ` · ${captureRuntime.backend.detail}` : ''}</small></div>
       </aside>
     </section>
 
     <section className="scene-lab-generate">
       <div><span className="card-kicker">GENERATE FOR THIS SCENE</span><h2>Kimodo motion. Aura scene path.</h2><p>Kimodo still creates the body motion. Aura bends only the global root trajectory onto the planned route and preserves the G1 joint animation as much as possible.</p></div>
-      <div className="scene-lab-prompt"><label htmlFor="scene-prompt">Navigation prompt</label><textarea id="scene-prompt" rows={3} value={prompt} onChange={e => setPrompt(e.target.value)} /><button disabled={busy || !prompt.trim()} onClick={() => void generate()}>{busy ? 'Working…' : 'Generate 2 scene motions'}</button></div>
+      <div className="scene-lab-prompt"><label htmlFor="scene-prompt">Navigation prompt</label><textarea id="scene-prompt" rows={3} value={prompt} onChange={e => setPrompt(e.target.value)} /><button disabled={busy || !prompt.trim() || !!derived?.error || endpointProblems.length > 0} onClick={() => void generate()}>{busy ? 'Working…' : 'Generate 2 scene motions'}</button></div>
       {message && <p className="scene-lab-message">{message}</p>}
       {error && <p className="scene-lab-error">{error}</p>}
     </section>
@@ -489,6 +580,6 @@ export function SceneLab() {
       <div className="scene-lab-evidence"><span>Generator</span><strong>NVIDIA Kimodo</strong><span>Scene adaptation</span><strong>{selectedMotion?.scene_fit?.method || 'Aura scene-fit'}</strong><span>Training meaning</span><strong>locomotion/navigation demonstration candidate</strong></div>
     </section>}
 
-    <section className="scene-lab-caveat"><strong>Important boundary</strong><p>The camera reconstruction is a visual digital twin. Monocular video reconstruction has arbitrary scale unless you calibrate it, and Aura does not infer trustworthy collision geometry from Gaussian opacity. The collision-aware route therefore comes from the explicit floor/obstacle proxy. This remains locomotion/navigation root-path fitting—not physics, balance validation, or contact-rich scene-conditioned motion generation.</p></section>
+    <section className="scene-lab-caveat"><strong>Important boundary</strong><p>The collision map is a conservative 2.5D estimate from visible Gaussians within G1’s height range. Verify orientation, metric scale, estimated floor and map coverage. Missing or transparent surfaces can be absent from the map; this is a navigation prototype, not a certified collision model. This remains locomotion/navigation root-path fitting—not physics, balance validation, or contact-rich scene-conditioned motion generation.</p></section>
   </main>
 }
