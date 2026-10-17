@@ -1,0 +1,27 @@
+# Netlify deploy config. The web app lives in aura-web/, so point Netlify there
+# instead of the repo root (which has no index.html and caused "Page not found").
+[build]
+  base = "aura-web"
+  command = "npm run build:judge"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Judge Mode is the static, GPU-free build. It runs without the local Aura API
+  # (aura_library_server.py), which Netlify cannot host. For a live deployment,
+  # switch the command to "npm run build" and proxy /aura-api to a hosted backend
+  # with the redirect below.
+  VITE_AURA_JUDGE_MODE = "true"
+
+# Live mode only: forward API calls to a publicly reachable Aura server.
+# [[redirects]]
+#   from = "/aura-api/*"
+#   to = "https://your-aura-api.example.com/:splat"
+#   status = 200
+#   force = true
+
+# Single-page app fallback so deep links and refreshes resolve to the app.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
